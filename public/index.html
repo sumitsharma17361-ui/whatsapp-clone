@@ -50,10 +50,9 @@
               <span id="active-friend-status" class="status-indicator">Offline</span>
             </div>
           </div>
-          <!-- Pure Native Call Trigger Controls -->
           <div style="display: flex; gap: 18px; margin-right: 15px;">
-            <button onclick="makeNativeCall('audio')" style="background:transparent; font-size:22px; border:none; cursor:pointer;">📞</button>
-            <button onclick="makeNativeCall('video')" style="background:transparent; font-size:22px; border:none; cursor:pointer;">🎥</button>
+            <button onclick="initiateWebRTCCall('audio')" style="background:transparent; font-size:22px; border:none; cursor:pointer;">📞</button>
+            <button onclick="initiateWebRTCCall('video')" style="background:transparent; font-size:22px; border:none; cursor:pointer;">🎥</button>
           </div>
         </div>
         
@@ -69,27 +68,27 @@
     </div>
   </div>
 
-  <!-- Real WhatsApp Style Full Screen Native Call Layer UI Container -->
+  <!-- Real WhatsApp Native P2P Full Screen Calling Overlay -->
   <div id="native-call-overlay" style="display: none; position: fixed; top:0; left:0; width:100vw; height:100dvh; background:#111b21; z-index:999999; flex-direction:column; align-items:center; justify-content:space-between; padding:50px 20px; color:white; font-family:sans-serif;">
     <div style="text-align:center; margin-top:40px;">
       <h1 id="native-call-user" style="font-size:32px; font-weight:normal; margin-bottom:10px;">User Name</h1>
       <div id="native-call-status" style="font-size:16px; color:#8696a0; letter-spacing:1px;">Ringing...</div>
     </div>
 
-    <!-- Video Rendering Grid Area -->
+    <!-- Original HTML5 Video Layout Boxes -->
     <div id="native-video-box" style="display:none; width:100%; max-width:360px; height:50vh; background:#1f2c34; border-radius:16px; overflow:hidden; position:relative;">
-       <video id="native-remote-stream" autoplay playsinline style="width:100%; height:100%; object-fit:cover;"></video>
-       <video id="native-local-stream" autoplay playsinline muted style="position:absolute; bottom:15px; right:15px; width:90px; height:120px; object-fit:cover; border-radius:8px; border:2px solid #fff;"></video>
+       <video id="native-remote-stream" autoplay playsinline style="width:100%; height:100%; object-fit:cover; background:#1f2c34;"></video>
+       <video id="native-local-stream" autoplay playsinline muted style="position:absolute; bottom:15px; right:15px; width:95px; height:130px; object-fit:cover; border-radius:8px; border:2px solid #fff; z-index:2; background:#111;"></video>
     </div>
 
-    <!-- Interactive Call System Button State Areas -->
+    <!-- Controls UI -->
     <div id="native-incoming-ui" style="display:none; gap:50px; margin-bottom:30px;">
-       <button onclick="acceptNativeCall()" style="background:#25d366; width:65px; height:65px; border-radius:50%; font-size:26px; padding:0; display:flex; justify-content:center; align-items:center; box-shadow:0 4px 15px rgba(37,211,102,0.4);">📞</button>
-       <button onclick="hangupNativeCall()" style="background:#ea0038; width:65px; height:65px; border-radius:50%; font-size:26px; padding:0; display:flex; justify-content:center; align-items:center; box-shadow:0 4px 15px rgba(234,0,56,0.4);">🛑</button>
+       <button onclick="acceptIncomingWebRTCCall()" style="background:#25d366; width:65px; height:65px; border-radius:50%; font-size:26px; border:none; cursor:pointer; display:flex; justify-content:center; align-items:center; box-shadow:0 4px 15px rgba(37,211,102,0.4);">📞</button>
+       <button onclick="hangupNativeCall()" style="background:#ea0038; width:65px; height:65px; border-radius:50%; font-size:26px; border:none; cursor:pointer; display:flex; justify-content:center; align-items:center; box-shadow:0 4px 15px rgba(234,0,56,0.4);">🛑</button>
     </div>
 
     <div id="native-active-ui" style="display:block; margin-bottom:30px;">
-       <button onclick="hangupNativeCall()" style="background:#ea0038; width:65px; height:65px; border-radius:50%; font-size:26px; padding:0; display:flex; justify-content:center; align-items:center; box-shadow:0 4px 15px rgba(234,0,56,0.3);">🛑</button>
+       <button onclick="hangupNativeCall()" style="background:#ea0038; width:65px; height:65px; border-radius:50%; font-size:26px; border:none; cursor:pointer; display:flex; justify-content:center; align-items:center; box-shadow:0 4px 15px rgba(234,0,56,0.3);">🛑</button>
     </div>
   </div>
 
