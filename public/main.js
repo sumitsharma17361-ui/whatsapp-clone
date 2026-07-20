@@ -5,6 +5,10 @@ let username = localStorage.getItem('username');
 let activeFriendId = null;
 let selectedFile = null;
 
+// Calling State Variables
+let currentCallRoom = null;
+let jitsiApi = null;
+
 const headers = () => ({
   'Content-Type': 'application/json',
   'Authorization': localStorage.getItem('token')
@@ -26,21 +30,25 @@ async function authAction(endpoint) {
   const p = document.getElementById('auth-password').value.trim();
   if(!u || !p) return alert("Please fill fields");
 
-  const res = await fetch(endpoint, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username: u, password: p })
-  });
-  const data = await res.json();
-  if (data.error) return alert(data.error);
-  
-  if (endpoint.includes('login')) {
-    localStorage.setItem('token', data.token);
-    localStorage.setItem('userId', data.userId);
-    localStorage.setItem('username', data.username);
-    window.location.reload();
-  } else {
-    alert('Registered successfully! Now click Login.');
+  try {
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: u, password: p })
+    });
+    const data = await res.json();
+    if (data.error) return alert(data.error);
+    
+    if (endpoint.includes('login')) {
+      localStorage.setItem('token', data.token);
+      localStorage.setItem('userId', data.userId);
+      localStorage.setItem('username', data.username);
+      window.location.reload();
+    } else {
+      alert('Registered successfully! Now click Login.');
+    }
+  } catch (err) {
+    alert("Connection error. Please try again.");
   }
 }
 
@@ -72,10 +80,84 @@ function showDashboard() {
     }
   });
 
+  // Call Event Listeners
+  socket.on('incomingCall', ({ from, room, type }) => {
+    currentCallRoom = room;
+    document.getElementById('incoming-caller-name').innerText = from;
+    document.getElementById('incoming-call-type').innerText = `Incoming ${type} call...`;
+    document.getElementById('incoming-call-box').style.display = 'flex';
+  });
+
   socket.on('incomingFriendRequest', () => loadDashboardData());
   socket.on('requestAccepted', () => loadDashboardData());
   loadDashboardData();
 }
+
+// --- CALL CONTROL FUNCTIONS ---
+function startCall(type) {
+  if (!activeFriendId) return;
+  const roomName = "WhatsAppLite-" + Math.random().toString(36).substring(2, 10);
+  currentCallRoom = roomName;
+
+  socket.emit('callUser', {
+    to: activeFriendId,
+    from: username,
+    room: roomName,
+    type: type
+  });
+
+  openJitsiRoom(roomName, type === 'audio');
+}
+
+function acceptCall() {
+  document.getElementById('incoming-call-box').style.display = 'none';
+  if (currentCallRoom) {
+    openJitsiRoom(currentCallRoom, false);
+  }
+}
+
+function rejectCall() {
+  document.getElementById('incoming-call-box').style.display = 'none';
+  currentCallRoom = null;
+}
+
+function openJitsiRoom(roomName, audioOnly) {
+  const frame = document.getElementById('call-screen-frame');
+  frame.innerHTML = '';
+  frame.style.display = 'block';
+
+  const options = {
+    roomName: roomName,
+    width: '100%',
+    height: '100%',
+    parentNode: frame,
+    userInfo: { displayName: username },
+    configOverwrite: {
+      startAudioOnly: audioOnly,
+      prejoinPageEnabled: false
+    }
+  };
+
+  jitsiApi = new JitsiMeetExternalAPI("meet.jit.si", options);
+
+  jitsiApi.addEventListeners({
+    videoConferenceLeft: () => {
+      closeCallScreen();
+    }
+  });
+}
+
+function closeCallScreen() {
+  const frame = document.getElementById('call-screen-frame');
+  frame.style.display = 'none';
+  frame.innerHTML = '';
+  if (jitsiApi) {
+    jitsiApi.dispose();
+    jitsiApi = null;
+  }
+  currentCallRoom = null;
+}
+// -----------------------------
 
 async function loadDashboardData() {
   const res = await fetch('/api/dashboard', { headers: headers() });
