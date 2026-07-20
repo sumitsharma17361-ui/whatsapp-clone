@@ -5,15 +5,15 @@ let username = localStorage.getItem('username');
 let activeFriendId = null;
 let selectedFile = null;
 
-// Native WebRTC Core Engine States
-let myStream = null;
-let activeCallPartner = null;
-let currentCallType = null;
+// Pure WebRTC State Variables
+let localStreamObj = null;
+let p2pConnection = null;
+let callPartnerId = null;
+let incomingCallSignal = null;
+let callTypeGlobal = null;
+let iceCandidatesQueue = [];
 
-const headers = () => ({
-  'Content-Type': 'application/json',
-  'Authorization': localStorage.getItem('token')
-});
+const iceServersConfig = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
 
 window.onload = () => { if (token) showDashboard(); };
 
@@ -44,9 +44,7 @@ async function authAction(endpoint) {
     localStorage.setItem('userId', data.userId);
     localStorage.setItem('username', data.username);
     window.location.reload();
-  } else {
-    alert('Registered successfully! Now click Login.');
-  }
+  } else { alert('Registered successfully! Now click Login.'); }
 }
 
 function showDashboard() {
@@ -76,11 +74,13 @@ function showDashboard() {
     }
   });
 
-  // --- NATIVE CALL REAL-TIME SOCKET ALERTS DETECTORS ---
-  socket.on('incomingCall', ({ from, fromId, type }) => {
-     activeCallPartner = fromId;
-     currentCallType = type;
-     
+  // --- NATIVE WEBRTC REAL-TIME DETECTORS ---
+  socket.on('incomingCall', ({ from, fromId, signal, type }) => {
+     callPartnerId = fromId;
+     incomingCallSignal = signal;
+     callTypeGlobal = type;
+     iceCandidatesQueue = [];
+
      document.getElementById('native-call-user').innerText = from;
      document.getElementById('native-call-status').innerText = `Incoming ${type} call...`;
      document.getElementById('native-incoming-ui').style.display = 'flex';
@@ -89,88 +89,134 @@ function showDashboard() {
      document.getElementById('native-call-overlay').style.display = 'flex';
   });
 
-  socket.on('callAccepted', () => {
+  socket.on('callAccepted', async ({ signal }) => {
      document.getElementById('native-call-status').innerText = "Connected";
-     if(currentCallType === 'video') {
-        document.getElementById('native-video-box').style.display = 'block';
+     if (p2pConnection) {
+        await p2pConnection.setRemoteDescription(new RTCSessionDescription(signal));
+        // Process queued candidates
+        while(iceCandidatesQueue.length > 0) {
+           let cand = iceCandidatesQueue.shift();
+           await p2pConnection.addIceCandidate(new RTCIceCandidate(cand));
+        }
      }
   });
 
-  socket.on('callEnded', () => {
-     clearNativeCallUI();
+  socket.on('iceCandidateReceive', async ({ candidate }) => {
+     if (p2pConnection && p2pConnection.remoteDescription && p2pConnection.remoteDescription.type) {
+        await p2pConnection.addIceCandidate(new RTCIceCandidate(candidate));
+     } else {
+        iceCandidatesQueue.push(candidate);
+     }
   });
 
-  socket.on('incomingFriendRequest', () => loadDashboardData());
-  socket.on('requestAccepted', () => loadDashboardData());
+  socket.on('callEnded', () => { clearNativeCallUI(); });
+
   loadDashboardData();
 }
 
-// --- WHATSAPP LOOKALIKE NATIVE ENGINE CONTROLS ---
-async function makeNativeCall(type) {
+// --- ASLI P2P WEBRTC HANDSHAKE LOGIC ---
+async function initiateWebRTCCall(type) {
   if(!activeFriendId) return;
-  activeCallPartner = activeFriendId;
-  currentCallType = type;
+  callPartnerId = activeFriendId;
+  callTypeGlobal = type;
+  iceCandidatesQueue = [];
 
   document.getElementById('native-call-user').innerText = document.getElementById('active-friend-name').innerText;
   document.getElementById('native-call-status').innerText = "Calling...";
   document.getElementById('native-incoming-ui').style.display = 'none';
   document.getElementById('native-active-ui').style.display = 'block';
-  
-  // Hardware capabilities initialization check
-  try {
-     myStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: type === 'video' });
-     if(type === 'video') {
-        document.getElementById('native-video-box').style.display = 'block';
-        document.getElementById('native-local-stream').srcObject = myStream;
-     }
-  } catch (err) {
-     console.log("Stream access delayed.");
-  }
-
   document.getElementById('native-call-overlay').style.display = 'flex';
 
-  socket.emit('callUser', {
-     to: activeFriendId,
-     from: username,
-     type: type
-  });
+  try {
+     localStreamObj = await navigator.mediaDevices.getUserMedia({ audio: true, video: type === 'video' });
+     if(type === 'video') {
+        document.getElementById('native-video-box').style.display = 'block';
+        document.getElementById('native-local-stream').srcObject = localStreamObj;
+     }
+  } catch (err) { alert("Camera/Mic access required!"); return; }
+
+  p2pConnection = new RTCPeerConnection(iceServersConfig);
+  localStreamObj.getTracks().forEach(track => p2pConnection.addTrack(track, localStreamObj));
+
+  p2pConnection.ontrack = e => {
+     if(type === 'video') {
+        document.getElementById('native-video-box').style.display = 'block';
+        document.getElementById('native-remote-stream').srcObject = e.streams[0];
+     }
+  };
+
+  p2pConnection.onicecandidate = e => {
+     if (e.candidate) {
+        socket.emit('iceCandidateEmit', { to: callPartnerId, candidate: e.candidate });
+     }
+  };
+
+  const offer = await p2pConnection.createOffer();
+  await p2pConnection.setLocalDescription(offer);
+  socket.emit('callUser', { to: activeFriendId, from: username, signalData: offer, type: type });
 }
 
-async function acceptNativeCall() {
+async function acceptIncomingWebRTCCall() {
   document.getElementById('native-incoming-ui').style.display = 'none';
   document.getElementById('native-active-ui').style.display = 'block';
-  document.getElementById('native-call-status').innerText = "Connected";
+  document.getElementById('native-call-status').innerText = "Connecting...";
 
   try {
-     myStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: currentCallType === 'video' });
-     if(currentCallType === 'video') {
+     localStreamObj = await navigator.mediaDevices.getUserMedia({ audio: true, video: callTypeGlobal === 'video' });
+     if(callTypeGlobal === 'video') {
         document.getElementById('native-video-box').style.display = 'block';
-        document.getElementById('native-local-stream').srcObject = myStream;
-        document.getElementById('native-remote-stream').srcObject = myStream; // Simulating local layout loop
+        document.getElementById('native-local-stream').srcObject = localStreamObj;
      }
-  } catch(e) {}
+  } catch(e) { alert("Camera/Mic error!"); return; }
 
-  socket.emit('answerCall', { to: activeCallPartner });
+  p2pConnection = new RTCPeerConnection(iceServersConfig);
+  localStreamObj.getTracks().forEach(track => p2pConnection.addTrack(track, localStreamObj));
+
+  p2pConnection.ontrack = e => {
+     if(callTypeGlobal === 'video') {
+        document.getElementById('native-video-box').style.display = 'block';
+        document.getElementById('native-remote-stream').srcObject = e.streams[0];
+     }
+  };
+
+  p2pConnection.onicecandidate = e => {
+     if (e.candidate) {
+        socket.emit('iceCandidateEmit', { to: callPartnerId, candidate: e.candidate });
+     }
+  };
+
+  await p2pConnection.setRemoteDescription(new RTCSessionDescription(incomingCallSignal));
+  const answer = await p2pConnection.createAnswer();
+  await p2pConnection.setLocalDescription(answer);
+
+  socket.emit('answerCall', { to: callPartnerId, signal: answer });
+  document.getElementById('native-call-status').innerText = "Connected";
+
+  // Process any candidate that arrived early
+  while(iceCandidatesQueue.length > 0) {
+     let c = iceCandidatesQueue.shift();
+     await p2pConnection.addIceCandidate(new RTCIceCandidate(c));
+  }
 }
 
 function hangupNativeCall() {
-  if(activeCallPartner) {
-     socket.emit('endCallEmit', { to: activeCallPartner });
-  }
+  if(callPartnerId) socket.emit('endCallEmit', { to: callPartnerId });
   clearNativeCallUI();
 }
 
 function clearNativeCallUI() {
-  if(myStream) {
-     myStream.getTracks().forEach(track => track.stop());
-     myStream = null;
-  }
+  if(localStreamObj) { localStreamObj.getTracks().forEach(track => track.stop()); localStreamObj = null; }
+  if(p2pConnection) { p2pConnection.close(); p2pConnection = null; }
   document.getElementById('native-call-overlay').style.display = 'none';
   document.getElementById('native-video-box').style.display = 'none';
-  activeCallPartner = null;
+  document.getElementById('native-remote-stream').srcObject = null;
+  document.getElementById('native-local-stream').srcObject = null;
+  callPartnerId = null;
+  incomingCallSignal = null;
+  iceCandidatesQueue = [];
 }
 
-// --- CHAT SYSTEM MODULES ---
+// --- CORE CHAT FUNCTIONS ---
 async function loadDashboardData() {
   const res = await fetch('/api/dashboard', { headers: headers() });
   const data = await res.json();
