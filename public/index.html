@@ -6,13 +6,17 @@
   <title>WhatsApp Lite</title>
   <link rel="stylesheet" href="style.css">
   <script src="/socket.io/socket.io.js"></script>
+
+  <!-- Firebase App & Auth Appended Legacy SDK Libraries -->
+  <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-auth-compat.js"></script>
 </head>
 <body>
   <div id="auth-screen" class="centered-container">
     <div class="card">
       <h2>WhatsApp Lite</h2>
       
-      <!-- Tab switchers -->
+      <!-- Tab Switchers -->
       <div style="display:flex; justify-content:center; gap:15px; margin-bottom:15px; font-size:14px; font-weight:bold; cursor:pointer;">
         <span id="tab-pass" onclick="switchAuthMode('password')" style="color:#00a884; border-bottom:2px solid #00a884; padding-bottom:3px;">Password Login</span>
         <span id="tab-otp" onclick="switchAuthMode('otp')" style="color:#8696a0;">Phone OTP Login</span>
@@ -21,7 +25,7 @@
       <!-- Password Login / Register Fields -->
       <div id="password-auth-box">
         <input type="text" id="auth-username" placeholder="Username">
-        <input type="text" id="auth-phone-reg" placeholder="Mobile Number (Optional for Register)" style="display:none; margin-bottom:10px;">
+        <input type="text" id="auth-phone-reg" placeholder="Mobile Number (e.g. +919876543210)">
         <input type="password" id="auth-password" placeholder="Password">
         <div class="row" style="display: flex; gap: 10px; width: 100%; margin-top:10px;">
           <button onclick="authAction('login')" style="flex: 1;">Login</button>
@@ -31,11 +35,13 @@
 
       <!-- Phone OTP Login Fields -->
       <div id="otp-auth-box" style="display: none;">
-        <input type="tel" id="auth-phone" placeholder="Enter Mobile Number">
-        <input type="text" id="auth-otp-input" placeholder="Enter 4-digit OTP" style="display:none; margin-top:10px;">
-        <button onclick="handleOtpFlow()" id="otp-action-btn" style="width:100%; margin-top:10px;">Send OTP</button>
+        <input type="tel" id="auth-phone" placeholder="Enter Mobile Number with Country Code (e.g. +9198765xxx)">
+        <input type="text" id="auth-otp-input" placeholder="Enter Real SMS OTP" style="display:none; margin-top:10px;">
+        <button onclick="handleRealFirebaseOtpFlow()" id="otp-action-btn" style="width:100%; margin-top:10px;">Send SMS OTP</button>
       </div>
 
+      <!-- Hidden Placeholder Element Required for Firebase Invisible reCAPTCHA Verification -->
+      <div id="recaptcha-container" style="margin-top: 10px;"></div>
     </div>
   </div>
 
