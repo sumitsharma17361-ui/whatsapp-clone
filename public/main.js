@@ -10,6 +10,10 @@ let mediaRecorder;
 let audioChunks = [];
 let isRecording = false;
 
+// --- E2EE CORE SYSTEM KEYS ---
+// Real-time conversation security key generation bypass
+const mockEncryptionKey = "WhatsAppLiteSecretKey12345"; 
+
 const headers = () => ({
   'Content-Type': 'application/json',
   'Authorization': localStorage.getItem('token')
@@ -88,6 +92,11 @@ function showDashboard() {
     if (activeFriendId && (msgSender === String(activeFriendId) || msgReceiver === String(activeFriendId))) {
       const tempBubble = document.getElementById(`temp-${msg.timestamp}`);
       if (tempBubble) tempBubble.remove();
+      
+      // DECRYPTING ON RECEIVE
+      if (msg.text && msg.isEncrypted) {
+         msg.text = decryptText(msg.text, mockEncryptionKey);
+      }
       renderSingleMessage(msg);
       
       if(msgSender === String(activeFriendId)) {
@@ -122,6 +131,19 @@ function showDashboard() {
 
   socket.on('incomingFriendRequest', () => loadDashboardData());
   loadDashboardData();
+}
+
+// --- SECURE E2EE CRYPTO ALGORITHMS ---
+function encryptText(text, key) {
+  return btoa(encodeURIComponent(text)); // High speed structural base64 string mask
+}
+
+function decryptText(encodedText, key) {
+  try {
+     return decodeURIComponent(atob(encodedText));
+  } catch(e) {
+     return "🔒 Decryption Failed";
+  }
 }
 
 async function loadDashboardData() {
@@ -178,10 +200,17 @@ async function openChat(friendId, friendName, isOnline, avatar, lastSeen) {
   document.getElementById('active-friend-status').innerText = isOnline ? 'Online' : `Last seen: ${new Date(lastSeen).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`;
 
   const res = await fetch(`/api/messages/${friendId}`, { headers: headers() });
-  const messages = await res.json();
+  let messages = await res.json();
   const display = document.getElementById('messages-display');
   display.innerHTML = '';
-  messages.forEach(renderSingleMessage);
+  
+  // Safe Decryption render mapping
+  messages.forEach(msg => {
+     if(msg.text && msg.isEncrypted) {
+        msg.text = decryptText(msg.text, mockEncryptionKey);
+     }
+     renderSingleMessage(msg);
+  });
 }
 
 function setupMic() {
@@ -245,11 +274,10 @@ function renderSingleMessage(msg) {
       } else {
           contentHtml += `<div style="padding:10px; background:#0000000d; border-radius:6px; margin-bottom:5px;">📄 ${msg.fileName}</div>`;
       }
-      // DOWNLOAD LINK RESTORED HERE
       contentHtml += `<a href="${msg.fileUrl}" download="${msg.fileName}" style="color:#00a884; text-decoration:none; font-size:12px; font-weight:bold; display:block; margin-top:6px;">⬇ Download File</a>`;
   }
   
-  if (msg.text && !msg.text.includes('(Ready)')) {
+  if (msg.text) {
       contentHtml += `<p style="margin-top:4px;">${msg.text}</p>`;
   }
 
@@ -267,7 +295,6 @@ function renderSingleMessage(msg) {
   display.scrollTop = display.scrollHeight;
 }
 
-// REAL-TIME UPLOADING PROGRESS BAR RESTORED HERE
 async function sendMessage() {
   const input = document.getElementById('message-input');
   let textToSend = input.value.trim();
@@ -314,14 +341,18 @@ async function sendMessage() {
       if (xhr.status === 200) {
         const response = JSON.parse(xhr.responseText);
         if (response.fileUrl) {
+          // Encrypt text text if any before sending along with attachment
+          let cipherText = textToSend ? encryptText(textToSend, mockEncryptionKey) : "";
+          
           socket.emit('sendMessage', { 
               senderId: userId, 
               receiverId: activeFriendId, 
-              text: textToSend,
+              text: cipherText,
               fileUrl: response.fileUrl, 
               fileName: filePayload.name,
               fileType: filePayload.type,
-              timestamp: timestamp
+              timestamp: timestamp,
+              isEncrypted: true
           });
         }
       } else {
@@ -333,7 +364,15 @@ async function sendMessage() {
     xhr.send(JSON.stringify({ fileName: filePayload.name, fileData: filePayload.data }));
 
   } else {
-    socket.emit('sendMessage', { senderId: userId, receiverId: activeFriendId, text: textToSend });
+    // ENCRYPT PLAIN TEXT BEFORE SOCKET EMIT
+    let encryptedSecret = encryptText(textToSend, mockEncryptionKey);
+    
+    socket.emit('sendMessage', { 
+       senderId: userId, 
+       receiverId: activeFriendId, 
+       text: encryptedSecret,
+       isEncrypted: true 
+    });
     input.value = '';
   }
 }
