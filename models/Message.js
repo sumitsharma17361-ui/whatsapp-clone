@@ -7,7 +7,8 @@ const MessageSchema = new mongoose.Schema({
   fileUrl: { type: String, default: null },
   fileName: { type: String, default: null },
   fileType: { type: String, default: null },
-  status: { type: String, enum: ['sent', 'delivered', 'read'], default: 'sent' }, // WhatsApp Ticks Tracking
+  status: { type: String, enum: ['sent', 'delivered', 'read'], default: 'sent' },
+  isEncrypted: { type: Boolean, default: false }, // Tracker flag for E2EE validation
   timestamp: { type: Date, default: Date.now }
 });
 
