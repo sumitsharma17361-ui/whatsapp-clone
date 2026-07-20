@@ -8,6 +8,7 @@
   <script src="/socket.io/socket.io.js"></script>
 </head>
 <body>
+  <!-- Auth Screen -->
   <div id="auth-screen" class="centered-container">
     <div class="card">
       <h2>Welcome to SignalChat</h2>
@@ -20,38 +21,54 @@
     </div>
   </div>
 
+  <!-- Main App Screen -->
   <div id="app-screen" class="app-container hidden">
+    <!-- Sidebar -->
     <div class="sidebar">
       <div class="sidebar-header">
         <h3 id="current-user-display">My Profile</h3>
         <button onclick="logout()" class="btn-small">Logout</button>
       </div>
+      
+      <!-- Friend Request Input -->
       <div class="search-box">
         <input type="text" id="target-username" placeholder="Add friend by username...">
         <button onclick="sendFriendRequest()">+</button>
       </div>
+
+      <!-- Pending Incoming Requests -->
       <div class="section-title">Pending Requests</div>
       <div id="requests-list" class="list-container"></div>
+
+      <!-- Active Chat List -->
       <div class="section-title">Chats</div>
       <div id="friends-list" class="list-container"></div>
     </div>
+
+    <!-- Chat Display Area -->
     <div class="chat-area">
       <div id="chat-placeholder" class="centered-container">
         <p>Select a friend to begin messaging</p>
       </div>
+      
       <div id="active-chat" class="chat-window hidden">
         <div class="chat-header">
           <span id="active-friend-name">Friend Name</span>
           <span id="active-friend-status" class="status-indicator">Offline</span>
         </div>
         <div id="messages-display" class="messages-container"></div>
+        
+        <!-- Updated Chat Input Area with Media Upload -->
         <div class="chat-input-area">
+          <input type="file" id="file-input" style="display: none;" onchange="handleFileSelect(this)">
+          <button onclick="document.getElementById('file-input').click()" style="background: #667781; padding: 10px 15px; margin-right: 5px;">📎</button>
           <input type="text" id="message-input" placeholder="Type a message...">
           <button onclick="sendMessage()">Send</button>
         </div>
       </div>
     </div>
   </div>
+
   <script src="main.js"></script>
 </body>
 </html>
