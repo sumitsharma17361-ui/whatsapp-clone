@@ -5,13 +5,10 @@ let username = localStorage.getItem('username');
 let activeFriendId = null;
 let selectedFile = null;
 
-// Audio Note Recording Engine
 let mediaRecorder;
 let audioChunks = [];
 let isRecording = false;
 
-// --- E2EE CORE SYSTEM KEYS ---
-// Real-time conversation security key generation bypass
 const mockEncryptionKey = "WhatsAppLiteSecretKey12345"; 
 
 const headers = () => ({
@@ -38,25 +35,98 @@ function toggleSidebar(show) {
   }
 }
 
-async function authAction(endpoint) {
-  const u = document.getElementById('auth-username').value;
-  const p = document.getElementById('auth-password').value;
+// Switch between Password login and Phone OTP login tabs
+function switchAuthMode(mode) {
+  const passBox = document.getElementById('password-auth-box');
+  const otpBox = document.getElementById('otp-auth-box');
+  const tabPass = document.getElementById('tab-pass');
+  const tabOtp = document.getElementById('tab-otp');
+  const phoneReg = document.getElementById('auth-phone-reg');
+
+  if(mode === 'otp') {
+    passBox.style.display = 'none';
+    otpBox.style.display = 'block';
+    tabOtp.style.color = '#00a884'; tabOtp.style.borderBottom = '2px solid #00a884';
+    tabPass.style.color = '#8696a0'; tabPass.style.borderBottom = 'none';
+    if(phoneReg) phoneReg.style.display = 'block';
+  } else {
+    passBox.style.display = 'block';
+    otpBox.style.display = 'none';
+    tabPass.style.color = '#00a884'; tabPass.style.borderBottom = '2px solid #00a884';
+    tabOtp.style.color = '#8696a0'; tabOtp.style.borderBottom = 'none';
+    if(phoneReg) phoneReg.style.display = 'block';
+  }
+}
+
+let otpStep = 'request'; // 'request' or 'verify'
+async function handleOtpFlow() {
+  const phone = document.getElementById('auth-phone').value.trim();
+  const otpInput = document.getElementById('auth-otp-input');
+  const actionBtn = document.getElementById('otp-action-btn');
+
+  if(!phone) return alert("Please enter mobile number");
+
+  if(otpStep === 'request') {
+    const res = await fetch('/api/request-otp', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phoneNumber: phone })
+    });
+    const data = await res.json();
+    if(data.error) return alert(data.error);
+
+    // Show simulated OTP popup for easy instant testing
+    alert(`[SIMULATED SMS OTP]: Your verification code is ${data.otp}`);
+    
+    otpInput.style.display = 'block';
+    actionBtn.innerText = 'Verify & Login';
+    otpStep = 'verify';
+  } else {
+    const otp = otpInput.value.trim();
+    if(!otp) return alert("Please enter the OTP");
+
+    const res = await fetch('/api/verify-otp', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phoneNumber: phone, otp })
+    });
+    const data = await res.json();
+    if(data.error) return alert(data.error);
+
+    localStorage.setItem('token', data.token);
+    localStorage.setItem('userId', data.userId);
+    localStorage.setItem('username', data.username);
+    if(data.profilePic) localStorage.setItem('profilePic', data.profilePic);
+    window.location.reload();
+  }
+}
+
+async function authAction(type) {
+  const u = document.getElementById('auth-username').value.trim();
+  const p = document.getElementById('auth-password').value.trim();
+  const phoneReg = document.getElementById('auth-phone-reg') ? document.getElementById('auth-phone-reg').value.trim() : "";
+
+  if(!u || !p) return alert("Please fill username and password");
+
+  const endpoint = type === 'login' ? '/api/login' : '/api/register';
+  const payload = type === 'register' ? { username: u, password: p, phoneNumber: phoneReg } : { username: u, password: p };
+
   const res = await fetch(endpoint, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username: u, password: p })
+    body: JSON.stringify(payload)
   });
   const data = await res.json();
   if (data.error) return alert(data.error);
   
-  if (endpoint.includes('login')) {
+  if (type === 'login') {
     localStorage.setItem('token', data.token);
     localStorage.setItem('userId', data.userId);
     localStorage.setItem('username', data.username);
     if(data.profilePic) localStorage.setItem('profilePic', data.profilePic);
     window.location.reload();
   } else {
-    alert('Registered! Please login.');
+    alert('Registered successfully! Now login with password or phone OTP.');
   }
 }
 
@@ -93,7 +163,6 @@ function showDashboard() {
       const tempBubble = document.getElementById(`temp-${msg.timestamp}`);
       if (tempBubble) tempBubble.remove();
       
-      // DECRYPTING ON RECEIVE
       if (msg.text && msg.isEncrypted) {
          msg.text = decryptText(msg.text, mockEncryptionKey);
       }
@@ -133,9 +202,8 @@ function showDashboard() {
   loadDashboardData();
 }
 
-// --- SECURE E2EE CRYPTO ALGORITHMS ---
 function encryptText(text, key) {
-  return btoa(encodeURIComponent(text)); // High speed structural base64 string mask
+  return btoa(encodeURIComponent(text));
 }
 
 function decryptText(encodedText, key) {
@@ -204,7 +272,6 @@ async function openChat(friendId, friendName, isOnline, avatar, lastSeen) {
   const display = document.getElementById('messages-display');
   display.innerHTML = '';
   
-  // Safe Decryption render mapping
   messages.forEach(msg => {
      if(msg.text && msg.isEncrypted) {
         msg.text = decryptText(msg.text, mockEncryptionKey);
@@ -341,9 +408,7 @@ async function sendMessage() {
       if (xhr.status === 200) {
         const response = JSON.parse(xhr.responseText);
         if (response.fileUrl) {
-          // Encrypt text text if any before sending along with attachment
           let cipherText = textToSend ? encryptText(textToSend, mockEncryptionKey) : "";
-          
           socket.emit('sendMessage', { 
               senderId: userId, 
               receiverId: activeFriendId, 
@@ -364,9 +429,7 @@ async function sendMessage() {
     xhr.send(JSON.stringify({ fileName: filePayload.name, fileData: filePayload.data }));
 
   } else {
-    // ENCRYPT PLAIN TEXT BEFORE SOCKET EMIT
     let encryptedSecret = encryptText(textToSend, mockEncryptionKey);
-    
     socket.emit('sendMessage', { 
        senderId: userId, 
        receiverId: activeFriendId, 
@@ -378,3 +441,4 @@ async function sendMessage() {
 }
 
 function logout() { localStorage.clear(); window.location.reload(); }
+    
