@@ -17,24 +17,21 @@ const io = socketIo(server, { cors: { origin: "*" } });
 
 const JWT_SECRET = process.env.JWT_SECRET || 'supersecretkey';
 
-// Files save karne ke liye uploads folder banana agar nahi hai to
 const UPLOADS_DIR = path.join(__dirname, 'public', 'uploads');
 if (!fs.existsSync(UPLOADS_DIR)){
     fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 }
 
-// File size limit badhane ke liye (Photos/Videos ke liye)
-app.use(express.json({ limit: '50mb' }));
+app.use(express.json({ limit: '100mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 mongoose.connect(process.env.MONGODB_URI)
   .then(() => console.log('MongoDB Connected'))
   .catch(err => console.error('DB Connection Error:', err));
 
-// --- FILE UPLOAD API ---
 app.post('/api/upload', async (req, res) => {
   try {
-    const { fileName, fileData } = req.body; // fileData base64 format me hoga
+    const { fileName, fileData } = req.body;
     if (!fileName || !fileData) return res.status(400).json({ error: 'No file data' });
 
     const buffer = Buffer.from(fileData.split(',')[1], 'base64');
@@ -42,7 +39,6 @@ app.post('/api/upload', async (req, res) => {
     const filePath = path.join(UPLOADS_DIR, uniqueFileName);
 
     fs.writeFileSync(filePath, buffer);
-    
     const fileUrl = `/uploads/${uniqueFileName}`;
     res.json({ fileUrl });
   } catch (err) {
@@ -50,7 +46,6 @@ app.post('/api/upload', async (req, res) => {
   }
 });
 
-// --- AUTH & OTHER REST APIs ---
 app.post('/api/register', async (req, res) => {
   try {
     const { username, password } = req.body;
@@ -134,7 +129,6 @@ app.get('/api/messages/:friendId', auth, async (req, res) => {
   res.json(messages);
 });
 
-// --- REAL-TIME DATA ---
 const onlineUsers = new Map();
 
 io.on('connection', (socket) => {
@@ -149,7 +143,6 @@ io.on('connection', (socket) => {
   });
 
   socket.on('sendMessage', async ({ senderId, receiverId, text, fileUrl, fileName, fileType }) => {
-    // Schema me jo bhi data aayega save hoga
     const msgData = { sender: senderId, receiver: receiverId, text };
     if (fileUrl) {
         msgData.fileUrl = fileUrl;
