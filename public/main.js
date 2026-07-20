@@ -245,6 +245,8 @@ function renderSingleMessage(msg) {
       } else {
           contentHtml += `<div style="padding:10px; background:#0000000d; border-radius:6px; margin-bottom:5px;">📄 ${msg.fileName}</div>`;
       }
+      // DOWNLOAD LINK RESTORED HERE
+      contentHtml += `<a href="${msg.fileUrl}" download="${msg.fileName}" style="color:#00a884; text-decoration:none; font-size:12px; font-weight:bold; display:block; margin-top:6px;">⬇ Download File</a>`;
   }
   
   if (msg.text && !msg.text.includes('(Ready)')) {
@@ -265,6 +267,7 @@ function renderSingleMessage(msg) {
   display.scrollTop = display.scrollHeight;
 }
 
+// REAL-TIME UPLOADING PROGRESS BAR RESTORED HERE
 async function sendMessage() {
   const input = document.getElementById('message-input');
   let textToSend = input.value.trim();
@@ -273,28 +276,62 @@ async function sendMessage() {
   if (selectedFile) {
     const filePayload = selectedFile;
     selectedFile = null;
-    input.value = "Sending...";
-    
-    if (textToSend.includes('(Ready)')) textToSend = "";
-
-    const res = await fetch("/api/upload", {
-       method: "POST",
-       headers: { "Content-Type": "application/json" },
-       body: JSON.stringify({ fileName: filePayload.name, fileData: filePayload.data })
-    });
-    const data = await res.json();
-    
-    if(data.fileUrl) {
-       socket.emit('sendMessage', { 
-          senderId: userId, 
-          receiverId: activeFriendId, 
-          text: textToSend,
-          fileUrl: data.fileUrl, 
-          fileName: filePayload.name,
-          fileType: filePayload.type
-       });
-    }
+    document.getElementById('file-input').value = "";
     input.value = '';
+
+    if (textToSend.includes('(Ready)')) textToSend = "";
+    const timestamp = Date.now();
+    const display = document.getElementById('messages-display');
+    
+    display.innerHTML += `
+      <div class="msg sent" id="temp-${timestamp}">
+        <div class="media-box">
+          <div style="font-size:13px; margin-bottom: 5px;">📤 Uploading: ${filePayload.name}</div>
+          <div class="progress-container" style="background:#e9edef; border-radius:4px; height:6px; width:100%; overflow:hidden; margin:4px 0;">
+            <div class="progress-bar" id="progress-${timestamp}" style="width: 0%; height:100%; background:#00a884; transition: width 0.2s;"></div>
+          </div>
+          <span id="percent-${timestamp}" style="font-size:11px; color:#667781;">0%</span>
+        </div>
+      </div>
+    `;
+    display.scrollTop = display.scrollHeight;
+
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", "/api/upload", true);
+    xhr.setRequestHeader("Content-Type", "application/json");
+
+    xhr.upload.onprogress = function(event) {
+      if (event.lengthComputable) {
+        const percentComplete = Math.round((event.loaded / event.total) * 100);
+        const bar = document.getElementById(`progress-${timestamp}`);
+        const text = document.getElementById(`percent-${timestamp}`);
+        if(bar) bar.style.width = percentComplete + '%';
+        if(text) text.innerText = percentComplete + '%';
+      }
+    };
+
+    xhr.onload = function() {
+      if (xhr.status === 200) {
+        const response = JSON.parse(xhr.responseText);
+        if (response.fileUrl) {
+          socket.emit('sendMessage', { 
+              senderId: userId, 
+              receiverId: activeFriendId, 
+              text: textToSend,
+              fileUrl: response.fileUrl, 
+              fileName: filePayload.name,
+              fileType: filePayload.type,
+              timestamp: timestamp
+          });
+        }
+      } else {
+        alert("File upload failed.");
+        const temp = document.getElementById(`temp-${timestamp}`);
+        if(temp) temp.remove();
+      }
+    };
+    xhr.send(JSON.stringify({ fileName: filePayload.name, fileData: filePayload.data }));
+
   } else {
     socket.emit('sendMessage', { senderId: userId, receiverId: activeFriendId, text: textToSend });
     input.value = '';
