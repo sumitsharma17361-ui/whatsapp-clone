@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SignalChat</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="/socket.io/socket.io.js"></script>
+</head>
+<body>
+  <div id="auth-screen" class="centered-container">
+    <div class="card">
+      <h2>Welcome to SignalChat</h2>
+      <input type="text" id="auth-username" placeholder="Username">
+      <input type="password" id="auth-password" placeholder="Password">
+      <div class="row">
+        <button onclick="authAction('/api/login')">Login</button>
+        <button onclick="authAction('/api/register')" class="btn-secondary">Register</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="app-screen" class="app-container hidden">
+    <div class="sidebar">
+      <div class="sidebar-header">
+        <h3 id="current-user-display">My Profile</h3>
+        <button onclick="logout()" class="btn-small">Logout</button>
+      </div>
+      <div class="search-box">
+        <input type="text" id="target-username" placeholder="Add friend by username...">
+        <button onclick="sendFriendRequest()">+</button>
+      </div>
+      <div class="section-title">Pending Requests</div>
+      <div id="requests-list" class="list-container"></div>
+      <div class="section-title">Chats</div>
+      <div id="friends-list" class="list-container"></div>
+    </div>
+    <div class="chat-area">
+      <div id="chat-placeholder" class="centered-container">
+        <p>Select a friend to begin messaging</p>
+      </div>
+      <div id="active-chat" class="chat-window hidden">
+        <div class="chat-header">
+          <span id="active-friend-name">Friend Name</span>
+          <span id="active-friend-status" class="status-indicator">Offline</span>
+        </div>
+        <div id="messages-display" class="messages-container"></div>
+        <div class="chat-input-area">
+          <input type="text" id="message-input" placeholder="Type a message...">
+          <button onclick="sendMessage()">Send</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script src="main.js"></script>
+</body>
+</html>
