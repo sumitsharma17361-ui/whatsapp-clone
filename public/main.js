@@ -5,7 +5,7 @@ let username = localStorage.getItem('username');
 let activeFriendId = null;
 let selectedFile = null;
 
-// Audio Note Engine
+// Audio Note Engine State
 let mediaRecorder;
 let audioChunks = [];
 let isRecording = false;
@@ -15,12 +15,12 @@ let jitsiApi = null;
 
 const headers = () => ({ 'Content-Type': 'application/json', 'Authorization': localStorage.getItem('token') });
 
+// FIXED: Removed missing setupMic call that was crashing the script execution
 window.onload = () => {
   if (token) {
     showDashboard();
     if(localStorage.getItem('profilePic')) document.getElementById('my-avatar').src = localStorage.getItem('profilePic');
   }
-  setupMic();
 };
 
 function toggleSidebar(show) {
@@ -35,6 +35,9 @@ function toggleSidebar(show) {
 async function authAction(endpoint) {
   const u = document.getElementById('auth-username').value;
   const p = document.getElementById('auth-password').value;
+  
+  if (!u || !p) return alert("Please fill all fields");
+
   const res = await fetch(endpoint, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -49,7 +52,9 @@ async function authAction(endpoint) {
     localStorage.setItem('username', data.username);
     if(data.profilePic) localStorage.setItem('profilePic', data.profilePic);
     window.location.reload();
-  } else { alert('Registered! Please login.'); }
+  } else { 
+    alert('Registered successfully! Please login.'); 
+  }
 }
 
 async function uploadProfilePic(input) {
@@ -107,13 +112,11 @@ function showDashboard() {
 
   socket.on('incomingFriendRequest', () => loadDashboardData());
   
-  // --- FOOLPROOF REAL-TIME INCOMING CALL TRIGGER LISTENER ---
   socket.on('incomingCall', ({ from, signal }) => {
       document.getElementById('caller-name-display').innerText = from;
       const popup = document.getElementById('incoming-call-popup');
       popup.style.display = 'flex';
       
-      // Bind Join click trigger smoothly
       document.getElementById('accept-call-btn').onclick = () => {
          popup.style.display = 'none';
          launchJitsiFrame(signal);
@@ -165,13 +168,10 @@ async function openChat(friendId, friendName, isOnline, avatar, lastSeen) {
   messages.forEach(renderSingleMessage);
 }
 
-// --- JITSI API ENGINE WORKFLOW ---
 function initiateJitsiCall(type) {
   if(!activeFriendId) return;
-  // Unique secure session token generation
   const secureRoomId = "WhatsAppLiteCall-" + Math.random().toString(36).substring(2, 12);
   
-  // Instant notification socket trigger to friend
   socket.emit('callUser', {
      to: activeFriendId,
      from: username,
@@ -187,7 +187,7 @@ function launchJitsiFrame(roomName, audioOnly = false) {
   container.innerHTML = ""; 
   container.style.display = 'block';
 
-  const domain = "8x8.vc"; // High speed decentralized server pipeline
+  const domain = "8x8.vc";
   const options = {
       roomName: "vpaas-magic-cookie-408fb8eb4ad14f9d85d7b5145b95ea45/" + roomName,
       width: "100%",
@@ -196,14 +196,12 @@ function launchJitsiFrame(roomName, audioOnly = false) {
       userInfo: { displayName: username },
       configOverwrite: {
          startAudioOnly: audioOnly,
-         prejoinPageEnabled: false, // Extra options bypass karke direct link join
+         prejoinPageEnabled: false,
          toolbarButtons: ['microphone', 'camera', 'hangup', 'tileview', 'toggle-camera']
       }
   };
   
   jitsiApi = new JitsiMeetExternalAPI(domain, options);
-  
-  // Red hangup cancel button listener mapping
   jitsiApi.addEventListeners({
      videoConferenceLeft: function() {
         endJitsiCallSession();
@@ -226,30 +224,50 @@ function closeActiveCall() {
   if(jitsiApi) { jitsiApi.dispose(); jitsiApi = null; }
 }
 
-// --- VOICE RECORDER ENGINE ---
-function setupMic() {
-  const micBtn = document.getElementById('mic-btn');
-  if(!micBtn) return;
-  micBtn.onclick = async () => {
-    if (!isRecording) {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      mediaRecorder = new MediaRecorder(stream);
-      audioChunks = [];
-      mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
-      mediaRecorder.onstop = async () => {
-        const audioBlob = new Blob(audioChunks, { type: 'audio/mp3' });
-        const reader = new FileReader();
-        reader.onloadend = async () => {
-           selectedFile = { name: `Voice-${Date.now()}.mp3`, type: 'audio/mp3', data: reader.result };
-           document.getElementById('message-input').value = `🎙️ Voice Note (Ready)`;
-        };
-        reader.readAsDataURL(audioBlob);
+// VOICE RECORDER CONTROLS
+async function startAudioRecording() {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    mediaRecorder = new MediaRecorder(stream);
+    audioChunks = [];
+    
+    mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
+    mediaRecorder.onstop = async () => {
+      const audioBlob = new Blob(audioChunks, { type: 'audio/mp3' });
+      const reader = new FileReader();
+      reader.onloadend = async () => {
+         selectedFile = { name: `Voice-${Date.now()}.mp3`, type: 'audio/mp3', data: reader.result };
+         document.getElementById('message-input').value = `🎙️ Voice Note (Ready)`;
       };
-      mediaRecorder.start();
-      isRecording = true; micBtn.innerText = "🛑";
-    } else { mediaRecorder.stop(); isRecording = false; micBtn.innerText = "🎙️"; }
-  };
+      reader.readAsDataURL(audioBlob);
+    };
+    
+    mediaRecorder.start();
+    isRecording = true;
+    document.getElementById('mic-btn').innerText = "🛑";
+  } catch (err) {
+    alert("Mic access denied or not supported.");
+  }
 }
+
+function stopAudioRecording() {
+  if (mediaRecorder && isRecording) {
+    mediaRecorder.stop();
+    isRecording = false;
+    document.getElementById('mic-btn').innerText = "🎙️";
+  }
+}
+
+// Bind mic button actions safely
+document.addEventListener('DOMContentLoaded', () => {
+  const micBtn = document.getElementById('mic-btn');
+  if(micBtn) {
+    micBtn.onclick = () => {
+      if(!isRecording) startAudioRecording();
+      else stopAudioRecording();
+    };
+  }
+});
 
 function handleFileSelect(input) {
   const file = input.files[0];
