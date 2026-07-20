@@ -6,6 +6,8 @@
   <title>WhatsApp Lite</title>
   <link rel="stylesheet" href="style.css">
   <script src="/socket.io/socket.io.js"></script>
+  <!-- Jitsi External API Script -->
+  <script src="https://meet.jit.si/external_api.js"></script>
 </head>
 <body>
   <div id="auth-screen" class="centered-container">
@@ -45,13 +47,21 @@
       </div>
       
       <div id="active-chat" class="chat-window hidden">
-        <div class="chat-header">
-          <button id="back-btn" onclick="toggleSidebar(true)">⬅</button>
-          <div class="header-info">
-            <span id="active-friend-name">Friend Name</span>
-            <span id="active-friend-status" class="status-indicator">Offline</span>
+        <div class="chat-header" style="display: flex; align-items: center; justify-content: space-between;">
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <button id="back-btn" onclick="toggleSidebar(true)">⬅</button>
+            <div class="header-info">
+              <span id="active-friend-name">Friend Name</span>
+              <span id="active-friend-status" class="status-indicator">Offline</span>
+            </div>
+          </div>
+          <!-- Calling Buttons -->
+          <div style="display: flex; gap: 15px; margin-right: 10px;">
+            <button onclick="startCall('audio')" style="background:transparent; font-size:20px; border:none; cursor:pointer;" title="Audio Call">📞</button>
+            <button onclick="startCall('video')" style="background:transparent; font-size:20px; border:none; cursor:pointer;" title="Video Call">🎥</button>
           </div>
         </div>
+        
         <div id="messages-display" class="messages-container"></div>
         
         <div class="chat-input-area">
@@ -63,6 +73,21 @@
       </div>
     </div>
   </div>
+
+  <!-- Incoming Call Popup Notification -->
+  <div id="incoming-call-box" style="display: none; position: fixed; top: 20px; left: 50%; transform: translateX(-50%); background: #111b21; color: white; padding: 15px 25px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.4); z-index: 10000; align-items: center; gap: 20px; border: 1px solid #00a884; width: 90%; max-width: 340px; justify-content: space-between;">
+    <div>
+      <b id="incoming-caller-name" style="font-size: 15px;">User</b>
+      <div id="incoming-call-type" style="font-size: 12px; color: #8696a0;">Incoming Call...</div>
+    </div>
+    <div style="display: flex; gap: 10px;">
+      <button onclick="acceptCall()" style="background: #25d366; padding: 8px 16px; border-radius: 6px; border:none; color:white; font-weight:bold; cursor:pointer;">Accept</button>
+      <button onclick="rejectCall()" style="background: #ea0038; padding: 8px 16px; border-radius: 6px; border:none; color:white; font-weight:bold; cursor:pointer;">Reject</button>
+    </div>
+  </div>
+
+  <!-- Fullscreen Call Screen Frame -->
+  <div id="call-screen-frame" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100dvh; background: black; z-index: 99999;"></div>
 
   <script src="main.js"></script>
 </body>
