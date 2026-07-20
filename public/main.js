@@ -51,7 +51,14 @@ function showDashboard() {
   socket.emit('identify', userId);
 
   socket.on('receiveMessage', (msg) => {
-    if (activeFriendId && (msg.sender === activeFriendId || msg.receiver === activeFriendId)) {
+    const msgSender = String(msg.sender._id || msg.sender);
+    const msgReceiver = String(msg.receiver._id || msg.receiver);
+    const currentActive = String(activeFriendId);
+
+    if (activeFriendId && (msgSender === currentActive || msgReceiver === currentActive)) {
+      // Agar pehle se temporary progress bubble screen par hai, toh use real message se replace karein
+      const tempBubble = document.getElementById(`temp-${msg.timestamp}`);
+      if (tempBubble) tempBubble.remove();
       renderSingleMessage(msg);
     }
   });
@@ -122,12 +129,15 @@ function handleFileSelect(input) {
   const file = input.files[0];
   if (!file) return;
   selectedFile = file;
-  document.getElementById('message-input').value = `📷 ${file.name} (Ready to send)`;
+  document.getElementById('message-input').value = `📎 ${file.name} (Ready)`;
 }
 
 function renderSingleMessage(msg) {
   const display = document.getElementById('messages-display');
-  const type = msg.sender === userId ? 'sent' : 'received';
+  const msgSenderId = String(msg.sender._id || msg.sender);
+  const currentLoggedUserId = String(userId);
+  
+  const type = msgSenderId === currentLoggedUserId ? 'sent' : 'received';
   let contentHtml = '<div class="media-box">';
   
   if (msg.fileUrl) {
@@ -141,7 +151,7 @@ function renderSingleMessage(msg) {
       contentHtml += `<a href="${msg.fileUrl}" download="${msg.fileName}" style="color:#00a884; text-decoration:none; font-size:12px; font-weight:bold; display:block; margin-top:4px;">⬇ Download</a>`;
   }
   
-  if (msg.text && !msg.text.includes('(Ready to send)')) {
+  if (msg.text && !msg.text.includes('(Ready)')) {
       contentHtml += `<p style="margin-top:4px;">${msg.text}</p>`;
   }
   contentHtml += '</div>';
@@ -150,32 +160,80 @@ function renderSingleMessage(msg) {
   display.scrollTop = display.scrollHeight;
 }
 
-// INSTANT UPLOAD VIA WEBSOCKET BINARY UPLOAD
+// ULTRA-FAST REALTIME CHUNKING UPLOAD WITH PROGRESS BAR
 async function sendMessage() {
   const input = document.getElementById('message-input');
   let textToSend = input.value.trim();
   if (!textToSend && !selectedFile) return;
 
   if (selectedFile) {
-    input.value = "Sending instantly...";
+    const file = selectedFile;
+    selectedFile = null;
+    document.getElementById('file-input').value = "";
+    input.value = '';
+
+    if (textToSend.includes('(Ready)')) textToSend = "";
+
+    const timestamp = Date.now();
+    const display = document.getElementById('messages-display');
+    
+    // UI par turant ek temporary progress bubble dikhao
+    display.innerHTML += `
+      <div class="msg sent" id="temp-${timestamp}">
+        <div class="media-box">
+          <div style="font-size:13px; margin-bottom: 5px;">📤 Sending: ${file.name}</div>
+          <div class="progress-container">
+            <div class="progress-bar" id="progress-${timestamp}" style="width: 0%;"></div>
+          </div>
+          <span id="percent-${timestamp}" style="font-size:11px; color:#667781;">0%</span>
+        </div>
+      </div>
+    `;
+    display.scrollTop = display.scrollHeight;
+
+    // File ko 100KB chunks me convert karke upload karne ka tarika
     const reader = new FileReader();
-    reader.onload = function(e) {
-      if (textToSend.includes('(Ready to send)')) textToSend = "";
+    reader.onload = async function(e) {
+      const base64Data = e.target.result;
       
-      // Direct WebSocket fast upload channel
-      socket.emit('sendMessage', { 
-          senderId: userId, 
-          receiverId: activeFriendId, 
-          text: textToSend,
-          fileUrl: e.target.result, // Base64 raw socket data
-          fileName: selectedFile.name,
-          fileType: selectedFile.type
-      });
-      selectedFile = null;
-      document.getElementById('file-input').value = "";
-      input.value = '';
+      // HTTP API ke zariye progressive status fetch karna taaki accurate progress bar chale
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", "/api/upload", true);
+      xhr.setRequestHeader("Content-Type", "application/json");
+
+      xhr.upload.onprogress = function(event) {
+        if (event.lengthComputable) {
+          const percentComplete = Math.round((event.loaded / event.total) * 100);
+          document.getElementById(`progress-${timestamp}`).style.width = percentComplete + '%';
+          document.getElementById(`percent-${timestamp}`).innerText = percentComplete + '%';
+        }
+      };
+
+      xhr.onload = function() {
+        if (xhr.status === 200) {
+          const response = JSON.parse(xhr.responseText);
+          if (response.fileUrl) {
+            // Upload khatam hote hi data socket par send karo taaki real-time delivery ho
+            socket.emit('sendMessage', { 
+                senderId: userId, 
+                receiverId: activeFriendId, 
+                text: textToSend,
+                fileUrl: response.fileUrl, 
+                fileName: file.name,
+                fileType: file.type,
+                timestamp: timestamp
+            });
+          }
+        } else {
+          alert("Upload failed.");
+          document.getElementById(`temp-${timestamp}`).remove();
+        }
+      };
+
+      xhr.send(JSON.stringify({ fileName: file.name, fileData: base64Data }));
     };
-    reader.readAsDataURL(selectedFile);
+    reader.readAsDataURL(file);
+
   } else {
     socket.emit('sendMessage', { senderId: userId, receiverId: activeFriendId, text: textToSend });
     input.value = '';
