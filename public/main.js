@@ -12,11 +12,21 @@ const headers = () => ({
 
 window.onload = () => { if (token) showDashboard(); };
 
+// SMART MOBILE SIDEBAR & CHAT TOGGLE SYSTEM FIX
 function toggleSidebar(show) {
   const sidebar = document.getElementById('sidebar');
-  if(window.innerWidth <= 768) {
-    if(show) sidebar.classList.remove('mobile-hidden');
-    else sidebar.classList.add('mobile-hidden');
+  const chatArea = document.getElementById('chat-area');
+  
+  if (window.innerWidth <= 768) {
+    if (show) {
+      // Dosto ki list dikhao, chat chhipao
+      sidebar.classList.remove('mobile-hidden');
+      chatArea.classList.add('mobile-hidden');
+    } else {
+      // Dosto ki list chhipao, chat screen dikhao
+      sidebar.classList.add('mobile-hidden');
+      chatArea.classList.remove('mobile-hidden');
+    }
   }
 }
 
@@ -56,7 +66,6 @@ function showDashboard() {
     const currentActive = String(activeFriendId);
 
     if (activeFriendId && (msgSender === currentActive || msgReceiver === currentActive)) {
-      // Agar pehle se temporary progress bubble screen par hai, toh use real message se replace karein
       const tempBubble = document.getElementById(`temp-${msg.timestamp}`);
       if (tempBubble) tempBubble.remove();
       renderSingleMessage(msg);
@@ -112,7 +121,7 @@ async function acceptFriend(requesterId) {
 
 async function openChat(friendId, friendName, isOnline) {
   activeFriendId = friendId;
-  toggleSidebar(false);
+  toggleSidebar(false); // Mobile toggle switch check
   document.getElementById('chat-placeholder').classList.add('hidden');
   document.getElementById('active-chat').classList.remove('hidden');
   document.getElementById('active-friend-name').innerText = friendName;
@@ -160,7 +169,6 @@ function renderSingleMessage(msg) {
   display.scrollTop = display.scrollHeight;
 }
 
-// ULTRA-FAST REALTIME CHUNKING UPLOAD WITH PROGRESS BAR
 async function sendMessage() {
   const input = document.getElementById('message-input');
   let textToSend = input.value.trim();
@@ -177,7 +185,6 @@ async function sendMessage() {
     const timestamp = Date.now();
     const display = document.getElementById('messages-display');
     
-    // UI par turant ek temporary progress bubble dikhao
     display.innerHTML += `
       <div class="msg sent" id="temp-${timestamp}">
         <div class="media-box">
@@ -191,12 +198,10 @@ async function sendMessage() {
     `;
     display.scrollTop = display.scrollHeight;
 
-    // File ko 100KB chunks me convert karke upload karne ka tarika
     const reader = new FileReader();
     reader.onload = async function(e) {
       const base64Data = e.target.result;
       
-      // HTTP API ke zariye progressive status fetch karna taaki accurate progress bar chale
       const xhr = new XMLHttpRequest();
       xhr.open("POST", "/api/upload", true);
       xhr.setRequestHeader("Content-Type", "application/json");
@@ -213,7 +218,6 @@ async function sendMessage() {
         if (xhr.status === 200) {
           const response = JSON.parse(xhr.responseText);
           if (response.fileUrl) {
-            // Upload khatam hote hi data socket par send karo taaki real-time delivery ho
             socket.emit('sendMessage', { 
                 senderId: userId, 
                 receiverId: activeFriendId, 
@@ -230,7 +234,8 @@ async function sendMessage() {
         }
       };
 
-      xhr.send(JSON.stringify({ fileName: file.name, fileData: base64Data }));
+      sendData = JSON.stringify({ fileName: file.name, fileData: base64Data });
+      xhr.send(sendData);
     };
     reader.readAsDataURL(file);
 
