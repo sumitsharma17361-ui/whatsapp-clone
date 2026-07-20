@@ -6,7 +6,7 @@ const UserSchema = new mongoose.Schema({
   friends: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
   friendRequests: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
   isOnline: { type: Boolean, default: false },
-  profilePic: { type: String, default: "" }, // Base64 data ya link
+  profilePic: { type: String, default: "" }, // Base64 dynamic profile avatar storage
   lastSeen: { type: Date, default: Date.now }
 });
 
