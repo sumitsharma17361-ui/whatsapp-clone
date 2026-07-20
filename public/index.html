@@ -23,7 +23,7 @@
 
   <!-- Main App Screen -->
   <div id="app-screen" class="app-container hidden">
-    <!-- Sidebar -->
+    <!-- Sidebar (Dosto ki list) -->
     <div class="sidebar" id="sidebar">
       <div class="sidebar-header">
         <h3 id="current-user-display">My Profile</h3>
@@ -42,15 +42,16 @@
       <div id="friends-list" class="list-container"></div>
     </div>
 
-    <!-- Chat Display Area -->
-    <div class="chat-area id="chat-area">
+    <!-- Chat Display Area (Messages) -->
+    <div class="chat-area mobile-hidden" id="chat-area">
       <div id="chat-placeholder" class="centered-container">
         <p>Select a friend to start chatting</p>
       </div>
       
       <div id="active-chat" class="chat-window hidden">
         <div class="chat-header">
-          <button id="back-btn" onclick="toggleSidebar(true)">⬅</button>
+          <!-- Back button jo mobile par dosto ki list par wapas le jayega -->
+          <button id="back-btn" onclick="toggleSidebar(true)" style="background:transparent; color:#111b21; font-size:22px; padding:5px 10px; margin-right:5px; border:none; font-weight:bold; cursor:pointer;">⬅</button>
           <div class="header-info">
             <span id="active-friend-name">Friend Name</span>
             <span id="active-friend-status" class="status-indicator">Offline</span>
