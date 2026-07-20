@@ -5,22 +5,23 @@ let username = localStorage.getItem('username');
 let activeFriendId = null;
 let selectedFile = null;
 
-// Audio Note Recording Variables
+// Audio Note Engine
 let mediaRecorder;
 let audioChunks = [];
 let isRecording = false;
 
-const headers = () => ({
-  'Content-Type': 'application/json',
-  'Authorization': localStorage.getItem('token')
-});
+// WebRTC Calling Engine State
+let localStream;
+let peerConnection;
+let incomingSignalData = null;
+const rtcConfig = { iceServers: [{ urls: 'ice:stun.l.google.com:19302' }] }; // STUN network routing bypass server
+
+const headers = () => ({ 'Content-Type': 'application/json', 'Authorization': localStorage.getItem('token') });
 
 window.onload = () => {
   if (token) {
     showDashboard();
-    if(localStorage.getItem('profilePic')) {
-      document.getElementById('my-avatar').src = localStorage.getItem('profilePic');
-    }
+    if(localStorage.getItem('profilePic')) document.getElementById('my-avatar').src = localStorage.getItem('profilePic');
   }
   setupMic();
 };
@@ -51,12 +52,9 @@ async function authAction(endpoint) {
     localStorage.setItem('username', data.username);
     if(data.profilePic) localStorage.setItem('profilePic', data.profilePic);
     window.location.reload();
-  } else {
-    alert('Registered! Please login.');
-  }
+  } else { alert('Registered! Please login.'); }
 }
 
-// PROFILE PICTURE UPDATE HANDLER
 async function uploadProfilePic(input) {
   const file = input.files[0];
   if(!file) return;
@@ -65,11 +63,7 @@ async function uploadProfilePic(input) {
     const base64 = e.target.result;
     document.getElementById('my-avatar').src = base64;
     localStorage.setItem('profilePic', base64);
-    await fetch('/api/profile-pic', {
-      method: 'POST',
-      headers: headers(),
-      body: JSON.stringify({ profilePic: base64 })
-    });
+    await fetch('/api/profile-pic', { method: 'POST', headers: headers(), body: JSON.stringify({ profilePic: base64 }) });
   };
   reader.readAsDataURL(file);
 }
@@ -85,33 +79,25 @@ function showDashboard() {
   socket.on('receiveMessage', (msg) => {
     const msgSender = String(msg.sender._id || msg.sender);
     const msgReceiver = String(msg.receiver._id || msg.receiver);
-    
     if (activeFriendId && (msgSender === String(activeFriendId) || msgReceiver === String(activeFriendId))) {
       const tempBubble = document.getElementById(`temp-${msg.timestamp}`);
       if (tempBubble) tempBubble.remove();
       renderSingleMessage(msg);
-      
-      // Agar active chat me samne se message aaya to use instantly 'read' emit kro
-      if(msgSender === String(activeFriendId)) {
-         socket.emit('readEmit', { msgId: msg._id, senderId: msgSender });
-      }
+      if(msgSender === String(activeFriendId)) socket.emit('readEmit', { msgId: msg._id, senderId: msgSender });
     }
   });
 
   socket.on('msgStatusUpdate', ({ msgId, status }) => {
      const tickEl = document.getElementById(`tick-${msgId}`);
      if(tickEl) {
-        tickEl.innerHTML = status === 'read' ? '✓✓' : '✓✓';
-        if(status === 'read') tickEl.style.color = '#53bdeb'; // Blue tick color
+        tickEl.innerHTML = '✓✓';
+        if(status === 'read') tickEl.style.color = '#53bdeb';
      }
   });
 
   socket.on('messagesMarkedRead', ({ by }) => {
      if(String(by) === String(activeFriendId)) {
-        document.querySelectorAll('.tick-status').forEach(el => {
-           el.innerHTML = '✓✓';
-           el.style.color = '#53bdeb';
-        });
+        document.querySelectorAll('.tick-status').forEach(el => { el.innerHTML = '✓✓'; el.style.color = '#53bdeb'; });
      }
   });
 
@@ -123,13 +109,35 @@ function showDashboard() {
   });
 
   socket.on('incomingFriendRequest', () => loadDashboardData());
+  
+  // --- REAL-TIME LISTENERS FOR CALLS ---
+  socket.on('incomingCall', async ({ from, signal, type }) => {
+     incomingSignalData = signal;
+     showCallOverlay(from, "Incoming " + type + " call...", true);
+     
+     // Initialize hardware streams early in background
+     localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: type === 'video' });
+     if(type === 'video') {
+        document.getElementById('video-grid').style.display = 'block';
+        document.getElementById('local-video').srcObject = localStream;
+     }
+  });
+
+  socket.on('callAccepted', async (signal) => {
+     document.getElementById('call-status-text').innerText = "Connected";
+     await peerConnection.setRemoteDescription(new RTCSessionDescription(signal));
+  });
+
+  socket.on('callEnded', () => {
+     closeCallUI();
+  });
+
   loadDashboardData();
 }
 
 async function loadDashboardData() {
   const res = await fetch('/api/dashboard', { headers: headers() });
   const data = await res.json();
-  
   const reqList = document.getElementById('requests-list');
   reqList.innerHTML = '';
   data.friendRequests.forEach(req => {
@@ -140,14 +148,13 @@ async function loadDashboardData() {
   friendsList.innerHTML = '';
   data.friends.forEach(f => {
     const avatar = f.profilePic || 'https://www.w3schools.com/howto/img_avatar.png';
-    const statusText = f.isOnline ? 'Online' : 'Offline';
     friendsList.innerHTML += `
       <div class="list-item" onclick="openChat('${f._id}', '${f.username}', ${f.isOnline}, '${avatar}', '${f.lastSeen}')">
         <div style="display:flex; align-items:center; gap:10px;">
           <img src="${avatar}" style="width:35px; height:35px; border-radius:50%; object-fit:cover;">
           <span>${f.username}</span>
         </div>
-        <span id="status-${f._id}" style="color:${f.isOnline ? '#25d366':'#8696a0'}">${statusText}</span>
+        <span id="status-${f._id}" style="color:${f.isOnline ? '#25d366':'#8696a0'}">${f.isOnline ? 'Online' : 'Offline'}</span>
       </div>`;
   });
 }
@@ -159,7 +166,6 @@ async function openChat(friendId, friendName, isOnline, avatar, lastSeen) {
   document.getElementById('active-chat').classList.remove('hidden');
   document.getElementById('active-friend-name').innerText = friendName;
   document.getElementById('active-friend-avatar').src = avatar;
-  
   document.getElementById('active-friend-status').innerText = isOnline ? 'Online' : `Last seen: ${new Date(lastSeen).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`;
 
   const res = await fetch(`/api/messages/${friendId}`, { headers: headers() });
@@ -169,44 +175,119 @@ async function openChat(friendId, friendName, isOnline, avatar, lastSeen) {
   messages.forEach(renderSingleMessage);
 }
 
+// --- CALL HANDLING SYSTEM (WEBRTC LOGIC ENGINE) ---
+function showCallOverlay(name, text, isInvite = false) {
+  document.getElementById('call-user-name').innerText = name;
+  document.getElementById('call-status-text').innerText = text;
+  document.getElementById('call-overlay').style.display = 'flex';
+  
+  if(isInvite) {
+     document.getElementById('call-invite-ui').style.display = 'flex';
+     document.getElementById('call-active-ui').style.display = 'none';
+  } else {
+     document.getElementById('call-invite-ui').style.display = 'none';
+     document.getElementById('call-active-ui').style.display = 'flex';
+  }
+}
+
+async function startCall(type) {
+  if(!activeFriendId) return;
+  showCallOverlay(document.getElementById('active-friend-name').innerText, "Ringing...");
+
+  localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: type === 'video' });
+  
+  if(type === 'video') {
+     document.getElementById('video-grid').style.display = 'block';
+     document.getElementById('local-video').srcObject = localStream;
+  }
+
+  peerConnection = new RTCPeerConnection(rtcConfig);
+  localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
+
+  peerConnection.ontrack = e => {
+     document.getElementById('video-grid').style.display = 'block';
+     document.getElementById('remote-video').srcObject = e.streams[0];
+  };
+
+  peerConnection.onicecandidate = e => {
+     if (e.candidate) {
+        // Send updated descriptions sequentially over STUN handshakes
+     }
+  };
+
+  // Create call invitation offer
+  const offer = await peerConnection.createOffer();
+  await peerConnection.setLocalDescription(offer);
+
+  socket.emit('callUser', {
+     to: activeFriendId,
+     from: username,
+     signalData: offer,
+     type: type
+  });
+}
+
+async function answerIncomingCall() {
+  document.getElementById('call-invite-ui').style.display = 'none';
+  document.getElementById('call-active-ui').style.display = 'flex';
+  document.getElementById('call-status-text').innerText = "Connected";
+
+  peerConnection = new RTCPeerConnection(rtcConfig);
+  localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
+
+  peerConnection.ontrack = e => {
+     document.getElementById('video-grid').style.display = 'block';
+     document.getElementById('remote-video').srcObject = e.streams[0];
+  };
+
+  await peerConnection.setRemoteDescription(new RTCSessionDescription(incomingSignalData));
+  const answer = await peerConnection.createAnswer();
+  await peerConnection.setLocalDescription(answer);
+
+  socket.emit('answerCall', { to: activeFriendId, signal: answer });
+}
+
+function endCall() {
+  socket.emit('endCallEmit', { to: activeFriendId });
+  closeCallUI();
+}
+
+function closeCallUI() {
+  if(localStream) {
+     localStream.getTracks().forEach(track => track.stop());
+  }
+  if(peerConnection) {
+     peerConnection.close();
+  }
+  document.getElementById('call-overlay').style.display = 'none';
+  document.getElementById('video-grid').style.display = 'none';
+  document.getElementById('remote-video').srcObject = null;
+  document.getElementById('local-video').srcObject = null;
+}
+
 // --- VOICE RECORDER ENGINE ---
 function setupMic() {
   const micBtn = document.getElementById('mic-btn');
   if(!micBtn) return;
-  
   micBtn.onclick = async () => {
     if (!isRecording) {
-      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-         return alert("Mic access not supported on this browser context.");
-      }
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       mediaRecorder = new MediaRecorder(stream);
       audioChunks = [];
-      
       mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
       mediaRecorder.onstop = async () => {
         const audioBlob = new Blob(audioChunks, { type: 'audio/mp3' });
         const reader = new FileReader();
         reader.onloadend = async () => {
-           selectedFile = {
-              name: `VoiceNote-${Date.now()}.mp3`,
-              type: 'audio/mp3',
-              data: reader.result
-           };
-           document.getElementById('message-input').value = `🎙️ Voice Note (Ready to Send)`;
+           selectedFile = { name: `Voice-${Date.now()}.mp3`, type: 'audio/mp3', data: reader.result };
+           document.getElementById('message-input').value = `🎙️ Voice Note (Ready)`;
         };
         reader.readAsDataURL(audioBlob);
       };
-      
       mediaRecorder.start();
-      isRecording = true;
-      micBtn.innerText = "🛑";
-      micBtn.style.color = "red";
+      isRecording = true; micBtn.innerText = "🛑";
     } else {
-      mediaRecorder.stop();
-      isRecording = false;
-      micBtn.innerText = "🎙️";
-      micBtn.style.color = "";
+      mediaRecorder.stop(); isRecording = false; micBtn.innerText = "🎙️";
     }
   };
 }
@@ -227,35 +308,22 @@ function renderSingleMessage(msg) {
   const msgSenderId = String(msg.sender._id || msg.sender);
   const currentLoggedUserId = String(userId);
   const type = msgSenderId === currentLoggedUserId ? 'sent' : 'received';
-  
   let contentHtml = '<div class="media-box">';
   
   if (msg.fileUrl) {
-      if (msg.fileType.startsWith('image/')) {
-          contentHtml += `<img src="${msg.fileUrl}">`;
-      } else if (msg.fileType.startsWith('video/')) {
-          contentHtml += `<video src="${msg.fileUrl}" controls></video>`;
-      } else if (msg.fileType.startsWith('audio/')) {
-          contentHtml += `<audio src="${msg.fileUrl}" controls style="max-width:100%;"></audio>`;
-      } else {
-          contentHtml += `<div style="padding:10px; background:#0000000d; border-radius:6px; margin-bottom:5px;">📄 ${msg.fileName}</div>`;
-      }
+      if (msg.fileType.startsWith('image/')) contentHtml += `<img src="${msg.fileUrl}">`;
+      else if (msg.fileType.startsWith('video/')) contentHtml += `<video src="${msg.fileUrl}" controls></video>`;
+      else if (msg.fileType.startsWith('audio/')) contentHtml += `<audio src="${msg.fileUrl}" controls style="max-width:100%;"></audio>`;
+      else contentHtml += `<div style="padding:10px; background:#0000000d; border-radius:6px; margin-bottom:5px;">📄 ${msg.fileName}</div>`;
   }
-  
-  if (msg.text && !msg.text.includes('(Ready)')) {
-      contentHtml += `<p style="margin-top:4px;">${msg.text}</p>`;
-  }
+  if (msg.text && !msg.text.includes('(Ready)')) contentHtml += `<p style="margin-top:4px;">${msg.text}</p>`;
 
-  // WHATSAPP STYLE TICK RENDER LOGIC
   if(type === 'sent') {
-     let tickSymbol = '✓'; // Single tick default
-     let tickColor = '#8696a0'; // Grey
+     let tickSymbol = '✓'; let tickColor = '#8696a0';
      if(msg.status === 'delivered' || msg.status === 'read') tickSymbol = '✓✓';
-     if(msg.status === 'read') tickColor = '#53bdeb'; // Blue Tick
-     
+     if(msg.status === 'read') tickColor = '#53bdeb';
      contentHtml += `<span class="tick-status" id="tick-${msg._id}" style="float:right; font-size:11px; margin-left:5px; color:${tickColor}; font-weight:bold;">${tickSymbol}</span>`;
   }
-
   contentHtml += '</div>';
   display.innerHTML += `<div class="msg ${type}">${contentHtml}</div>`;
   display.scrollTop = display.scrollHeight;
@@ -267,28 +335,16 @@ async function sendMessage() {
   if (!textToSend && !selectedFile) return;
 
   if (selectedFile) {
-    const filePayload = selectedFile;
-    selectedFile = null;
-    input.value = "Sending...";
-    
+    const filePayload = selectedFile; selectedFile = null; input.value = "Sending...";
     if (textToSend.includes('(Ready)')) textToSend = "";
-
     const res = await fetch("/api/upload", {
        method: "POST",
        headers: { "Content-Type": "application/json" },
        body: JSON.stringify({ fileName: filePayload.name, fileData: filePayload.data })
     });
     const data = await res.json();
-    
     if(data.fileUrl) {
-       socket.emit('sendMessage', { 
-          senderId: userId, 
-          receiverId: activeFriendId, 
-          text: textToSend,
-          fileUrl: data.fileUrl, 
-          fileName: filePayload.name,
-          fileType: filePayload.type
-       });
+       socket.emit('sendMessage', { senderId: userId, receiverId: activeFriendId, text: textToSend, fileUrl: data.fileUrl, fileName: filePayload.name, fileType: filePayload.type });
     }
     input.value = '';
   } else {
