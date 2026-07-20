@@ -3,9 +3,11 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>WhatsApp Ultra Call</title>
+  <title>WhatsApp Ultra Pro</title>
   <link rel="stylesheet" href="style.css">
   <script src="/socket.io/socket.io.js"></script>
+  <!-- Jitsi Calling Web Script Loading -->
+  <script src="https://8x8.vc/external_api.js"></script>
 </head>
 <body>
   <div id="auth-screen" class="centered-container">
@@ -55,10 +57,10 @@
               <span id="active-friend-status" class="status-indicator">Offline</span>
             </div>
           </div>
-          <!-- Calling Controls -->
-          <div style="display: flex; gap: 15px; margin-right: 10px;">
-            <button onclick="startCall('audio')" style="background:transparent; font-size:20px; border:none; cursor:pointer;">📞</button>
-            <button onclick="startCall('video')" style="background:transparent; font-size:20px; border:none; cursor:pointer;">🎥</button>
+          <!-- New Standard Call Buttons Trigger -->
+          <div style="display: flex; gap: 18px; margin-right: 15px;">
+            <button onclick="initiateJitsiCall('audio')" style="background:transparent; font-size:22px; border:none; cursor:pointer; padding:0;">📞</button>
+            <button onclick="initiateJitsiCall('video')" style="background:transparent; font-size:22px; border:none; cursor:pointer; padding:0;">🎥</button>
           </div>
         </div>
         
@@ -75,31 +77,20 @@
     </div>
   </div>
 
-  <!-- Real-time Full Screen Calling Overlay Box -->
-  <div id="call-overlay" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100dvh; background: rgba(17, 27, 33, 0.95); z-index: 999; flex-direction: column; align-items: center; justify-content: space-between; padding: 40px; color: white;">
-    <div style="text-align: center;">
-      <h2 id="call-user-name">Friend Name</h2>
-      <p id="call-status-text" style="color:#8696a0; margin-top:5px;">Ringing...</p>
+  <!-- Real-time Incoming Call Dialog Box Popup -->
+  <div id="incoming-call-popup" style="display: none; position: fixed; top: 20px; left: 50%; transform: translateX(-50%); background: #111b21; color: white; padding: 15px 25px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.3); z-index: 1000; align-items: center; gap: 20px; border: 1px solid #00a884; width: 90%; max-width: 350px; justify-content: space-between;">
+    <div>
+      <b id="caller-name-display" style="font-size: 15px;">Friend Name</b>
+      <div style="font-size: 12px; color: #8696a0;">Incoming Call...</div>
     </div>
-
-    <!-- Video Containers for Live Feeds -->
-    <div id="video-grid" style="position: relative; width: 100%; max-width: 400px; height: 50vh; display: none; background: #222; border-radius: 12px; overflow: hidden;">
-      <video id="remote-video" autoplay playsinline style="width: 100%; height: 100%; object-fit: cover;"></video>
-      <video id="local-video" autoplay playsinline muted style="position: absolute; bottom: 15px; right: 15px; width: 100px; height: 140px; object-fit: cover; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.3); border:2px solid #fff;"></video>
-    </div>
-
-    <!-- Incoming Call Invitation UI Box -->
-    <div id="call-invite-ui" style="display: none; gap: 40px;">
-      <button onclick="answerIncomingCall()" style="background:#25d366; width:60px; height:60px; border-radius:50%; font-size:24px; padding:0;">🤙</button>
-      <button onclick="endCall()" style="background:#ea0038; width:60px; height:60px; border-radius:50%; font-size:24px; padding:0;">🛑</button>
-    </div>
-
-    <!-- Active Ongoing Controls -->
-    <div id="call-active-ui">
-      <button onclick="endCall()" style="background:#ea0038; width:60px; height:60px; border-radius:50%; font-size:24px; padding:0;">🛑</button>
+    <div style="display: flex; gap: 10px;">
+      <button id="accept-call-btn" style="background: #25d366; padding: 8px 15px; border-radius: 6px;">Join</button>
+      <button onclick="closeCallPopup()" style="background: #ea0038; padding: 8px 15px; border-radius: 6px;">Dismiss</button>
     </div>
   </div>
 
-  <script src="main.js"></script>
+  <!-- Full-Screen Interactive Calling IFrame Box container -->
+  <div id="jitsi-container" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100dvh; background: black; z-index: 9999;"></div>
+
 </body>
 </html>
