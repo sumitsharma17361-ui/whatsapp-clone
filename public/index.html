@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>SignalChat</title>
+  <title>WhatsApp Lite</title>
   <link rel="stylesheet" href="style.css">
   <script src="/socket.io/socket.io.js"></script>
 </head>
@@ -11,12 +11,12 @@
   <!-- Auth Screen -->
   <div id="auth-screen" class="centered-container">
     <div class="card">
-      <h2>Welcome to SignalChat</h2>
+      <h2>WhatsApp Lite</h2>
       <input type="text" id="auth-username" placeholder="Username">
       <input type="password" id="auth-password" placeholder="Password">
-      <div class="row">
-        <button onclick="authAction('/api/login')">Login</button>
-        <button onclick="authAction('/api/register')" class="btn-secondary">Register</button>
+      <div class="row" style="display: flex; gap: 10px; width: 100%;">
+        <button onclick="authAction('/api/login')" style="flex: 1;">Login</button>
+        <button onclick="authAction('/api/register')" class="btn-secondary" style="flex: 1;">Register</button>
       </div>
     </div>
   </div>
@@ -24,46 +24,45 @@
   <!-- Main App Screen -->
   <div id="app-screen" class="app-container hidden">
     <!-- Sidebar -->
-    <div class="sidebar">
+    <div class="sidebar" id="sidebar">
       <div class="sidebar-header">
         <h3 id="current-user-display">My Profile</h3>
         <button onclick="logout()" class="btn-small">Logout</button>
       </div>
       
-      <!-- Friend Request Input -->
       <div class="search-box">
-        <input type="text" id="target-username" placeholder="Add friend by username...">
+        <input type="text" id="target-username" placeholder="Add friend username...">
         <button onclick="sendFriendRequest()">+</button>
       </div>
 
-      <!-- Pending Incoming Requests -->
       <div class="section-title">Pending Requests</div>
       <div id="requests-list" class="list-container"></div>
 
-      <!-- Active Chat List -->
       <div class="section-title">Chats</div>
       <div id="friends-list" class="list-container"></div>
     </div>
 
     <!-- Chat Display Area -->
-    <div class="chat-area">
+    <div class="chat-area id="chat-area">
       <div id="chat-placeholder" class="centered-container">
-        <p>Select a friend to begin messaging</p>
+        <p>Select a friend to start chatting</p>
       </div>
       
       <div id="active-chat" class="chat-window hidden">
         <div class="chat-header">
-          <span id="active-friend-name">Friend Name</span>
-          <span id="active-friend-status" class="status-indicator">Offline</span>
+          <button id="back-btn" onclick="toggleSidebar(true)">⬅</button>
+          <div class="header-info">
+            <span id="active-friend-name">Friend Name</span>
+            <span id="active-friend-status" class="status-indicator">Offline</span>
+          </div>
         </div>
         <div id="messages-display" class="messages-container"></div>
         
-        <!-- Updated Chat Input Area with Media Upload -->
         <div class="chat-input-area">
           <input type="file" id="file-input" style="display: none;" onchange="handleFileSelect(this)">
-          <button onclick="document.getElementById('file-input').click()" style="background: #667781; padding: 10px 15px; margin-right: 5px;">📎</button>
+          <button class="attach-btn" onclick="document.getElementById('file-input').click()">📎</button>
           <input type="text" id="message-input" placeholder="Type a message...">
-          <button onclick="sendMessage()">Send</button>
+          <button class="send-btn" onclick="sendMessage()">Send</button>
         </div>
       </div>
     </div>
