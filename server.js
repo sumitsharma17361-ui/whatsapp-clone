@@ -11,7 +11,7 @@ const fs = require('fs');
 const User = require('./models/User');
 const Message = require('./models/Message');
 
-const app = report = express();
+const app = express();
 const server = http.createServer(app);
 const io = socketIo(server, { cors: { origin: "*" } });
 
@@ -110,15 +110,24 @@ io.on('connection', (socket) => {
     await msg.save(); io.to(receiverId).emit('receiveMessage', msg); io.to(senderId).emit('receiveMessage', msg);
   });
 
-  // Native calling socket channels routing
-  socket.on('callUser', ({ to, from, type }) => {
+  // Pure WebRTC Signaling Events
+  socket.on('callUser', ({ to, from, signalData, type }) => {
     const targetSocketId = onlineUsers.get(to);
-    if (targetSocketId) io.to(targetSocketId).emit('incomingCall', { from, fromId: currentUserId, type });
+    if (targetSocketId) {
+      io.to(targetSocketId).emit('incomingCall', { from, fromId: currentUserId, signal: signalData, type });
+    }
   });
-  socket.on('answerCall', ({ to }) => {
+
+  socket.on('answerCall', ({ to, signal }) => {
     const targetSocketId = onlineUsers.get(to);
-    if (targetSocketId) io.to(targetSocketId).emit('callAccepted');
+    if (targetSocketId) io.to(targetSocketId).emit('callAccepted', { signal });
   });
+
+  socket.on('iceCandidateEmit', ({ to, candidate }) => {
+    const targetSocketId = onlineUsers.get(to);
+    if (targetSocketId) io.to(targetSocketId).emit('iceCandidateReceive', { candidate });
+  });
+
   socket.on('endCallEmit', ({ to }) => {
     const targetSocketId = onlineUsers.get(to);
     if (targetSocketId) io.to(targetSocketId).emit('callEnded');
