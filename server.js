@@ -29,30 +29,22 @@ mongoose.connect(process.env.MONGODB_URI)
   .then(() => console.log('MongoDB Connected'))
   .catch(err => console.error('DB Connection Error:', err));
 
-// --- FILE UPLOAD API ---
 app.post('/api/upload', async (req, res) => {
   try {
     const { fileName, fileData } = req.body;
     if (!fileName || !fileData) return res.status(400).json({ error: 'No file data' });
+
     const buffer = Buffer.from(fileData.split(',')[1], 'base64');
     const uniqueFileName = Date.now() + '-' + fileName;
     const filePath = path.join(UPLOADS_DIR, uniqueFileName);
+
     fs.writeFileSync(filePath, buffer);
     res.json({ fileUrl: `/uploads/${uniqueFileName}` });
-  } catch (err) { res.status(500).json({ error: 'File upload failed' }); }
+  } catch (err) {
+    res.status(500).json({ error: 'File upload failed' });
+  }
 });
 
-// --- UPDATE PROFILE PICTURE ---
-app.post('/api/profile-pic', async (req, res) => {
-  try {
-    const authHeader = req.headers['authorization'];
-    const decoded = jwt.verify(authHeader, JWT_SECRET);
-    await User.findByIdAndUpdate(decoded.userId, { profilePic: req.body.profilePic });
-    res.json({ message: "Profile updated successfully" });
-  } catch (err) { res.status(500).json({ error: "Failed to update profile pic" }); }
-});
-
-// --- REST ROUTING PIPELINES ---
 app.post('/api/register', async (req, res) => {
   try {
     const { username, password } = req.body;
@@ -60,7 +52,9 @@ app.post('/api/register', async (req, res) => {
     const user = new User({ username, password: hashedPassword });
     await user.save();
     res.status(201).json({ message: 'User registered successfully' });
-  } catch (err) { res.status(400).json({ error: 'Username already exists' }); }
+  } catch (err) {
+    res.status(400).json({ error: 'Username already exists' });
+  }
 });
 
 app.post('/api/login', async (req, res) => {
@@ -70,7 +64,7 @@ app.post('/api/login', async (req, res) => {
     return res.status(400).json({ error: 'Invalid credentials' });
   }
   const token = jwt.sign({ userId: user._id, username: user.username }, JWT_SECRET);
-  res.json({ token, userId: user._id, username: user.username, profilePic: user.profilePic });
+  res.json({ token, userId: user._id, username: user.username });
 });
 
 const auth = (req, res, next) => {
@@ -86,9 +80,13 @@ const auth = (req, res, next) => {
 app.post('/api/friend-request', auth, async (req, res) => {
   const { targetUsername } = req.body;
   const targetUser = await User.findOne({ username: targetUsername });
-  if (!targetUser || targetUser.friendRequests.includes(req.user.userId) || targetUser.friends.includes(req.user.userId)) {
-    return res.status(400).json({ error: 'Failed to send request' });
+  if (!targetUser) return res.status(404).json({ error: 'User not found' });
+  if (targetUser._id.toString() === req.user.userId) return res.status(400).json({ error: 'Cannot add yourself' });
+
+  if (targetUser.friendRequests.includes(req.user.userId) || targetUser.friends.includes(req.user.userId)) {
+    return res.status(400).json({ error: 'Already sent or friends' });
   }
+
   targetUser.friendRequests.push(req.user.userId);
   await targetUser.save();
   io.to(targetUser._id.toString()).emit('incomingFriendRequest');
@@ -97,24 +95,39 @@ app.post('/api/friend-request', auth, async (req, res) => {
 
 app.get('/api/dashboard', auth, async (req, res) => {
   const user = await User.findById(req.user.userId)
-    .populate('friends', 'username isOnline profilePic lastSeen')
+    .populate('friends', 'username isOnline')
     .populate('friendRequests', 'username');
   res.json({ friends: user.friends, friendRequests: user.friendRequests });
 });
 
+app.post('/api/accept-request', auth, async (req, res) => {
+  const { requesterId } = req.body;
+  const user = await User.findById(req.user.userId);
+  const requester = await User.findById(requesterId);
+
+  if (!user.friendRequests.includes(requesterId)) return res.status(400).json({ error: 'No request' });
+
+  user.friendRequests = user.friendRequests.filter(id => id.toString() !== requesterId);
+  user.friends.push(requesterId);
+  requester.friends.push(user._id);
+
+  await user.save();
+  await requester.save();
+
+  io.to(requesterId).emit('requestAccepted');
+  res.json({ message: 'Accepted' });
+});
+
 app.get('/api/messages/:friendId', auth, async (req, res) => {
-  await Message.updateMany(
-    { sender: req.params.friendId, receiver: req.user.userId, status: { $ne: 'read' } },
-    { $set: { status: 'read' } }
-  );
-  io.to(req.params.friendId).emit('messagesMarkedRead', { by: req.user.userId });
   const messages = await Message.find({
-    $or: [{ sender: req.user.userId, receiver: req.params.friendId }, { sender: req.params.friendId, receiver: req.user.userId }]
+    $or: [
+      { sender: req.user.userId, receiver: req.params.friendId },
+      { sender: req.params.friendId, receiver: req.user.userId }
+    ]
   }).sort('timestamp');
   res.json(messages);
 });
 
-// --- CORE SOCKET & FIX WEBRTC CHANNELS ---
 const onlineUsers = new Map();
 
 io.on('connection', (socket) => {
@@ -128,52 +141,24 @@ io.on('connection', (socket) => {
     socket.broadcast.emit('statusChanged', { userId, isOnline: true });
   });
 
-  socket.on('sendMessage', async (data) => {
-    const receiverOnline = onlineUsers.has(data.receiverId);
-    const msg = new Message({
-      sender: data.senderId, receiver: data.receiverId, text: data.text,
-      fileUrl: data.fileUrl, fileName: data.fileName, fileType: data.fileType,
-      status: receiverOnline ? 'delivered' : 'sent'
-    });
-    await msg.save();
-    io.to(data.receiverId).emit('receiveMessage', msg);
-    io.to(data.senderId).emit('receiveMessage', msg);
-  });
-
-  socket.on('readEmit', async ({ msgId, senderId }) => {
-     await Message.findByIdAndUpdate(msgId, { status: 'read' });
-     io.to(senderId).emit('msgStatusUpdate', { msgId, status: 'read' });
-  });
-
-  // Calling logic routing channels
-  socket.on('callUser', ({ to, from, signalData, type }) => {
-    const targetSocketId = onlineUsers.get(to);
-    if (targetSocketId) {
-      io.to(targetSocketId).emit('incomingCall', { from: from, fromId: currentUserId, signal: signalData, type });
+  socket.on('sendMessage', async ({ senderId, receiverId, text, fileUrl, fileName, fileType }) => {
+    const msgData = { sender: senderId, receiver: receiverId, text };
+    if (fileUrl) {
+        msgData.fileUrl = fileUrl;
+        msgData.fileName = fileName;
+        msgData.fileType = fileType;
     }
-  });
-
-  socket.on('answerCall', ({ to, signal }) => {
-    const targetSocketId = onlineUsers.get(to);
-    if (targetSocketId) io.to(targetSocketId).emit('callAccepted', signal);
-  });
-
-  socket.on('iceCandidateEmit', ({ to, candidate }) => {
-    const targetSocketId = onlineUsers.get(to);
-    if (targetSocketId) io.to(targetSocketId).emit('iceCandidateReceive', candidate);
-  });
-
-  socket.on('endCallEmit', ({ to }) => {
-    const targetSocketId = onlineUsers.get(to);
-    if (targetSocketId) io.to(targetSocketId).emit('callEnded');
+    const msg = new Message(msgData);
+    await msg.save();
+    io.to(receiverId).emit('receiveMessage', msg);
+    io.to(senderId).emit('receiveMessage', msg);
   });
 
   socket.on('disconnect', async () => {
     if (currentUserId) {
       onlineUsers.delete(currentUserId);
-      const now = new Date();
-      await User.findByIdAndUpdate(currentUserId, { isOnline: false, lastSeen: now });
-      io.emit('statusChanged', { userId: currentUserId, isOnline: false, lastSeen: now });
+      await User.findByIdAndUpdate(currentUserId, { isOnline: false });
+      io.emit('statusChanged', { userId: currentUserId, isOnline: false });
     }
   });
 });
