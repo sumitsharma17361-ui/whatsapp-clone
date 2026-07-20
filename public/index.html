@@ -11,12 +11,31 @@
   <div id="auth-screen" class="centered-container">
     <div class="card">
       <h2>WhatsApp Lite</h2>
-      <input type="text" id="auth-username" placeholder="Username">
-      <input type="password" id="auth-password" placeholder="Password">
-      <div class="row" style="display: flex; gap: 10px; width: 100%;">
-        <button onclick="authAction('/api/login')" style="flex: 1;">Login</button>
-        <button onclick="authAction('/api/register')" class="btn-secondary" style="flex: 1;">Register</button>
+      
+      <!-- Tab switchers -->
+      <div style="display:flex; justify-content:center; gap:15px; margin-bottom:15px; font-size:14px; font-weight:bold; cursor:pointer;">
+        <span id="tab-pass" onclick="switchAuthMode('password')" style="color:#00a884; border-bottom:2px solid #00a884; padding-bottom:3px;">Password Login</span>
+        <span id="tab-otp" onclick="switchAuthMode('otp')" style="color:#8696a0;">Phone OTP Login</span>
       </div>
+
+      <!-- Password Login / Register Fields -->
+      <div id="password-auth-box">
+        <input type="text" id="auth-username" placeholder="Username">
+        <input type="text" id="auth-phone-reg" placeholder="Mobile Number (Optional for Register)" style="display:none; margin-bottom:10px;">
+        <input type="password" id="auth-password" placeholder="Password">
+        <div class="row" style="display: flex; gap: 10px; width: 100%; margin-top:10px;">
+          <button onclick="authAction('login')" style="flex: 1;">Login</button>
+          <button onclick="authAction('register')" class="btn-secondary" style="flex: 1;" id="reg-btn">Register</button>
+        </div>
+      </div>
+
+      <!-- Phone OTP Login Fields -->
+      <div id="otp-auth-box" style="display: none;">
+        <input type="tel" id="auth-phone" placeholder="Enter Mobile Number">
+        <input type="text" id="auth-otp-input" placeholder="Enter 4-digit OTP" style="display:none; margin-top:10px;">
+        <button onclick="handleOtpFlow()" id="otp-action-btn" style="width:100%; margin-top:10px;">Send OTP</button>
+      </div>
+
     </div>
   </div>
 
@@ -61,11 +80,8 @@
         <div class="chat-input-area">
           <input type="file" id="file-input" style="display: none;" onchange="handleFileSelect(this)">
           <button class="attach-btn" onclick="document.getElementById('file-input').click()">📎</button>
-          
           <input type="text" id="message-input" placeholder="Type a message...">
-          
           <button id="mic-btn" style="background:transparent; font-size:22px; border:none; cursor:pointer; padding:0 5px;">🎙️</button>
-          
           <button class="send-btn" onclick="sendMessage()">Send</button>
         </div>
       </div>
