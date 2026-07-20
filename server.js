@@ -34,17 +34,12 @@ app.post('/api/upload', async (req, res) => {
   try {
     const { fileName, fileData } = req.body;
     if (!fileName || !fileData) return res.status(400).json({ error: 'No file data' });
-
     const buffer = Buffer.from(fileData.split(',')[1], 'base64');
     const uniqueFileName = Date.now() + '-' + fileName;
     const filePath = path.join(UPLOADS_DIR, uniqueFileName);
-
     fs.writeFileSync(filePath, buffer);
-    const fileUrl = `/uploads/${uniqueFileName}`;
-    res.json({ fileUrl });
-  } catch (err) {
-    res.status(500).json({ error: 'File upload failed' });
-  }
+    res.json({ fileUrl: `/uploads/${uniqueFileName}` });
+  } catch (err) { res.status(500).json({ error: 'File upload failed' }); }
 });
 
 // --- UPDATE PROFILE PICTURE ---
@@ -52,8 +47,7 @@ app.post('/api/profile-pic', async (req, res) => {
   try {
     const authHeader = req.headers['authorization'];
     const decoded = jwt.verify(authHeader, JWT_SECRET);
-    const { profilePic } = req.body;
-    await User.findByIdAndUpdate(decoded.userId, { profilePic });
+    await User.findByIdAndUpdate(decoded.userId, { profilePic: req.body.profilePic });
     res.json({ message: "Profile updated successfully" });
   } catch (err) { res.status(500).json({ error: "Failed to update profile pic" }); }
 });
@@ -92,9 +86,8 @@ const auth = (req, res, next) => {
 app.post('/api/friend-request', auth, async (req, res) => {
   const { targetUsername } = req.body;
   const targetUser = await User.findOne({ username: targetUsername });
-  if (!targetUser) return res.status(404).json({ error: 'User not found' });
-  if (targetUser.friendRequests.includes(req.user.userId) || targetUser.friends.includes(req.user.userId)) {
-    return res.status(400).json({ error: 'Already sent or friends' });
+  if (!targetUser || targetUser.friendRequests.includes(req.user.userId) || targetUser.friends.includes(req.user.userId)) {
+    return res.status(400).json({ error: 'Failed to send request' });
   }
   targetUser.friendRequests.push(req.user.userId);
   await targetUser.save();
@@ -115,17 +108,13 @@ app.get('/api/messages/:friendId', auth, async (req, res) => {
     { $set: { status: 'read' } }
   );
   io.to(req.params.friendId).emit('messagesMarkedRead', { by: req.user.userId });
-
   const messages = await Message.find({
-    $or: [
-      { sender: req.user.userId, receiver: req.params.friendId },
-      { sender: req.params.friendId, receiver: req.user.userId }
-    ]
+    $or: [{ sender: req.user.userId, receiver: req.params.friendId }, { sender: req.params.friendId, receiver: req.user.userId }]
   }).sort('timestamp');
   res.json(messages);
 });
 
-// --- REAL-TIME CORE SOCKET & CALLING ROUTINES ---
+// --- CORE SOCKET & FIX WEBRTC CHANNELS ---
 const onlineUsers = new Map();
 
 io.on('connection', (socket) => {
@@ -139,14 +128,16 @@ io.on('connection', (socket) => {
     socket.broadcast.emit('statusChanged', { userId, isOnline: true });
   });
 
-  socket.on('sendMessage', async ({ senderId, receiverId, text, fileUrl, fileName, fileType }) => {
-    const receiverOnline = onlineUsers.has(receiverId);
-    const currentStatus = receiverOnline ? 'delivered' : 'sent';
-    const msgData = { sender: senderId, receiver: receiverId, text, fileUrl, fileName, fileType, status: currentStatus };
-    const msg = new Message(msgData);
+  socket.on('sendMessage', async (data) => {
+    const receiverOnline = onlineUsers.has(data.receiverId);
+    const msg = new Message({
+      sender: data.senderId, receiver: data.receiverId, text: data.text,
+      fileUrl: data.fileUrl, fileName: data.fileName, fileType: data.fileType,
+      status: receiverOnline ? 'delivered' : 'sent'
+    });
     await msg.save();
-    io.to(receiverId).emit('receiveMessage', msg);
-    io.to(senderId).emit('receiveMessage', msg);
+    io.to(data.receiverId).emit('receiveMessage', msg);
+    io.to(data.senderId).emit('receiveMessage', msg);
   });
 
   socket.on('readEmit', async ({ msgId, senderId }) => {
@@ -154,17 +145,27 @@ io.on('connection', (socket) => {
      io.to(senderId).emit('msgStatusUpdate', { msgId, status: 'read' });
   });
 
-  // --- WEBRTC CALLING CHANNELS ---
+  // Calling logic routing channels
   socket.on('callUser', ({ to, from, signalData, type }) => {
-    io.to(to).emit('incomingCall', { from, signal: signalData, type });
+    const targetSocketId = onlineUsers.get(to);
+    if (targetSocketId) {
+      io.to(targetSocketId).emit('incomingCall', { from: from, fromId: currentUserId, signal: signalData, type });
+    }
   });
 
   socket.on('answerCall', ({ to, signal }) => {
-    io.to(to).emit('callAccepted', signal);
+    const targetSocketId = onlineUsers.get(to);
+    if (targetSocketId) io.to(targetSocketId).emit('callAccepted', signal);
+  });
+
+  socket.on('iceCandidateEmit', ({ to, candidate }) => {
+    const targetSocketId = onlineUsers.get(to);
+    if (targetSocketId) io.to(targetSocketId).emit('iceCandidateReceive', candidate);
   });
 
   socket.on('endCallEmit', ({ to }) => {
-    io.to(to).emit('callEnded');
+    const targetSocketId = onlineUsers.get(to);
+    if (targetSocketId) io.to(targetSocketId).emit('callEnded');
   });
 
   socket.on('disconnect', async () => {
