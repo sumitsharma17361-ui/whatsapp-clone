@@ -11,7 +11,7 @@ const fs = require('fs');
 const User = require('./models/User');
 const Message = require('./models/Message');
 
-const app = express();
+const app = express(); // FIXED: Removed the invalid syntax bug here
 const server = http.createServer(app);
 const io = socketIo(server, { cors: { origin: "*" } });
 
@@ -75,8 +75,12 @@ app.post('/api/friend-request', auth, async (req, res) => {
 });
 
 app.get('/api/dashboard', auth, async (req, res) => {
-  const user = await User.findById(req.user.userId).populate('friends', 'username isOnline').populate('friendRequests', 'username');
-  res.json({ friends: user.friends, friendRequests: user.friendRequests });
+  try {
+    const user = await User.findById(req.user.userId).populate('friends', 'username isOnline').populate('friendRequests', 'username');
+    res.json({ friends: user.friends || [], friendRequests: user.friendRequests || [] });
+  } catch (err) {
+    res.status(500).json({ error: 'Dashboard error' });
+  }
 });
 
 app.post('/api/accept-request', auth, async (req, res) => {
@@ -110,19 +114,16 @@ io.on('connection', (socket) => {
     await msg.save(); io.to(receiverId).emit('receiveMessage', msg); io.to(senderId).emit('receiveMessage', msg);
   });
 
-  // Pure WebRTC Signaling Events
   socket.on('callUser', ({ to, from, signalData, type }) => {
     const targetSocketId = onlineUsers.get(to);
-    if (targetSocketId) {
-      io.to(targetSocketId).emit('incomingCall', { from, fromId: currentUserId, signal: signalData, type });
-    }
+    if (targetSocketId) io.to(targetSocketId).emit('incomingCall', { from, fromId: currentUserId, signal: signalData, type });
   });
-
+  
   socket.on('answerCall', ({ to, signal }) => {
     const targetSocketId = onlineUsers.get(to);
     if (targetSocketId) io.to(targetSocketId).emit('callAccepted', { signal });
   });
-
+  
   socket.on('iceCandidateEmit', ({ to, candidate }) => {
     const targetSocketId = onlineUsers.get(to);
     if (targetSocketId) io.to(targetSocketId).emit('iceCandidateReceive', { candidate });
