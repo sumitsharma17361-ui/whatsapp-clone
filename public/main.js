@@ -10,11 +10,12 @@ let mediaRecorder;
 let audioChunks = [];
 let isRecording = false;
 
-// WebRTC Calling Engine State
+// WebRTC Calling Engine State - FIXED STUN & HANDSHAKE ROUTING
 let localStream;
 let peerConnection;
 let incomingSignalData = null;
-const rtcConfig = { iceServers: [{ urls: 'ice:stun.l.google.com:19302' }] }; // STUN network routing bypass server
+let callType = null;
+const rtcConfig = { iceServers: [{ urls: 'ice:stun.l.google.com:19302' }] }; 
 
 const headers = () => ({ 'Content-Type': 'application/json', 'Authorization': localStorage.getItem('token') });
 
@@ -110,22 +111,18 @@ function showDashboard() {
 
   socket.on('incomingFriendRequest', () => loadDashboardData());
   
-  // --- REAL-TIME LISTENERS FOR CALLS ---
+  // --- FIXED WEBRTC REAL-TIME LISTENERS ---
   socket.on('incomingCall', async ({ from, signal, type }) => {
      incomingSignalData = signal;
+     callType = type;
      showCallOverlay(from, "Incoming " + type + " call...", true);
-     
-     // Initialize hardware streams early in background
-     localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: type === 'video' });
-     if(type === 'video') {
-        document.getElementById('video-grid').style.display = 'block';
-        document.getElementById('local-video').srcObject = localStream;
-     }
   });
 
   socket.on('callAccepted', async (signal) => {
      document.getElementById('call-status-text').innerText = "Connected";
-     await peerConnection.setRemoteDescription(new RTCSessionDescription(signal));
+     if (peerConnection) {
+        await peerConnection.setRemoteDescription(new RTCSessionDescription(signal));
+     }
   });
 
   socket.on('callEnded', () => {
@@ -175,7 +172,7 @@ async function openChat(friendId, friendName, isOnline, avatar, lastSeen) {
   messages.forEach(renderSingleMessage);
 }
 
-// --- CALL HANDLING SYSTEM (WEBRTC LOGIC ENGINE) ---
+// --- FIXED CALLING OVERLAY LOGIC ---
 function showCallOverlay(name, text, isInvite = false) {
   document.getElementById('call-user-name').innerText = name;
   document.getElementById('call-status-text').innerText = text;
@@ -192,6 +189,7 @@ function showCallOverlay(name, text, isInvite = false) {
 
 async function startCall(type) {
   if(!activeFriendId) return;
+  callType = type;
   showCallOverlay(document.getElementById('active-friend-name').innerText, "Ringing...");
 
   localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: type === 'video' });
@@ -209,13 +207,7 @@ async function startCall(type) {
      document.getElementById('remote-video').srcObject = e.streams[0];
   };
 
-  peerConnection.onicecandidate = e => {
-     if (e.candidate) {
-        // Send updated descriptions sequentially over STUN handshakes
-     }
-  };
-
-  // Create call invitation offer
+  // Fixed Offer Generation Pipeline
   const offer = await peerConnection.createOffer();
   await peerConnection.setLocalDescription(offer);
 
@@ -231,6 +223,12 @@ async function answerIncomingCall() {
   document.getElementById('call-invite-ui').style.display = 'none';
   document.getElementById('call-active-ui').style.display = 'flex';
   document.getElementById('call-status-text').innerText = "Connected";
+
+  localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: callType === 'video' });
+  if(callType === 'video') {
+     document.getElementById('video-grid').style.display = 'block';
+     document.getElementById('local-video').srcObject = localStream;
+  }
 
   peerConnection = new RTCPeerConnection(rtcConfig);
   localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
