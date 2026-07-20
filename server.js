@@ -154,6 +154,14 @@ io.on('connection', (socket) => {
     io.to(senderId).emit('receiveMessage', msg);
   });
 
+  // Calling Routing Event
+  socket.on('callUser', ({ to, from, room, type }) => {
+    const targetSocketId = onlineUsers.get(to);
+    if (targetSocketId) {
+      io.to(targetSocketId).emit('incomingCall', { from, room, type });
+    }
+  });
+
   socket.on('disconnect', async () => {
     if (currentUserId) {
       onlineUsers.delete(currentUserId);
