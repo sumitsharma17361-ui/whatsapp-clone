@@ -29,7 +29,6 @@ mongoose.connect(process.env.MONGODB_URI)
   .then(() => console.log('MongoDB Connected'))
   .catch(err => console.error('DB Connection Error:', err));
 
-// --- FILE & VOICE NOTE UPLOAD API ---
 app.post('/api/upload', async (req, res) => {
   try {
     const { fileName, fileData } = req.body;
@@ -47,21 +46,15 @@ app.post('/api/upload', async (req, res) => {
   }
 });
 
-// --- UPDATE PROFILE PICTURE ---
 app.post('/api/profile-pic', async (req, res) => {
   try {
     const authHeader = req.headers['authorization'];
     const decoded = jwt.verify(authHeader, JWT_SECRET);
-    const { profilePic } = req.body;
-    
-    await User.findByIdAndUpdate(decoded.userId, { profilePic });
+    await User.findByIdAndUpdate(decoded.userId, { profilePic: req.body.profilePic });
     res.json({ message: "Profile updated successfully" });
-  } catch (err) {
-    res.status(500).json({ error: "Failed to update profile pic" });
-  }
+  } catch (err) { res.status(500).json({ error: "Failed to update profile pic" }); }
 });
 
-// --- REST ROUTING PIPELINES ---
 app.post('/api/register', async (req, res) => {
   try {
     const { username, password } = req.body;
@@ -96,7 +89,6 @@ app.post('/api/friend-request', auth, async (req, res) => {
   const { targetUsername } = req.body;
   const targetUser = await User.findOne({ username: targetUsername });
   if (!targetUser) return res.status(404).json({ error: 'User not found' });
-  
   if (targetUser.friendRequests.includes(req.user.userId) || targetUser.friends.includes(req.user.userId)) {
     return res.status(400).json({ error: 'Already sent or friends' });
   }
@@ -117,16 +109,11 @@ app.post('/api/accept-request', auth, async (req, res) => {
   const { requesterId } = req.body;
   const user = await User.findById(req.user.userId);
   const requester = await User.findById(requesterId);
-
   if (!user.friendRequests.includes(requesterId)) return res.status(400).json({ error: 'No request' });
-
   user.friendRequests = user.friendRequests.filter(id => id.toString() !== requesterId);
   user.friends.push(requesterId);
   requester.friends.push(user._id);
-
-  await user.save();
-  await requester.save();
-
+  await user.save(); await requester.save();
   io.to(requesterId).emit('requestAccepted');
   res.json({ message: 'Accepted' });
 });
@@ -136,51 +123,33 @@ app.get('/api/messages/:friendId', auth, async (req, res) => {
     { sender: req.params.friendId, receiver: req.user.userId, status: { $ne: 'read' } },
     { $set: { status: 'read' } }
   );
-  
   io.to(req.params.friendId).emit('messagesMarkedRead', { by: req.user.userId });
-
   const messages = await Message.find({
-    $or: [
-      { sender: req.user.userId, receiver: req.params.friendId },
-      { sender: req.params.friendId, receiver: req.user.userId }
-    ]
+    $or: [{ sender: req.user.userId, receiver: req.params.friendId }, { sender: req.params.friendId, receiver: req.user.userId }]
   }).sort('timestamp');
   res.json(messages);
 });
 
-// --- REAL-TIME CORE SOCKET MANAGEMENT ---
 const onlineUsers = new Map();
-
 io.on('connection', (socket) => {
   let currentUserId = null;
-
   socket.on('identify', async (userId) => {
-    currentUserId = userId;
-    onlineUsers.set(userId, socket.id);
-    socket.join(userId);
+    currentUserId = userId; onlineUsers.set(userId, socket.id); socket.join(userId);
     await User.findByIdAndUpdate(userId, { isOnline: true });
     socket.broadcast.emit('statusChanged', { userId, isOnline: true });
   });
 
-  socket.on('sendMessage', async ({ senderId, receiverId, text, fileUrl, fileName, fileType }) => {
-    const receiverOnline = onlineUsers.has(receiverId);
-    const currentStatus = receiverOnline ? 'delivered' : 'sent';
-
-    const msgData = { 
-      sender: senderId, 
-      receiver: receiverId, 
-      text, 
-      fileUrl, 
-      fileName, 
-      fileType,
-      status: currentStatus 
-    };
-    
-    const msg = new Message(msgData);
+  socket.on('sendMessage', async (data) => {
+    const receiverOnline = onlineUsers.has(data.receiverId);
+    const msg = new Message({ 
+      sender: data.senderId, receiver: data.receiverId, 
+      text: data.text, fileUrl: data.fileUrl, fileName: data.fileName, fileType: data.fileType,
+      status: receiverOnline ? 'delivered' : 'sent',
+      isEncrypted: data.isEncrypted || false
+    });
     await msg.save();
-    
-    io.to(receiverId).emit('receiveMessage', msg);
-    io.to(senderId).emit('receiveMessage', msg);
+    io.to(data.receiverId).emit('receiveMessage', msg);
+    io.to(data.senderId).emit('receiveMessage', msg);
   });
 
   socket.on('readEmit', async ({ msgId, senderId }) => {
