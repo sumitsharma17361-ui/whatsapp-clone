@@ -52,13 +52,10 @@ app.post('/api/profile-pic', async (req, res) => {
   try {
     const authHeader = req.headers['authorization'];
     const decoded = jwt.verify(authHeader, JWT_SECRET);
-    const { profilePic } = req.body; // Base64
-    
+    const { profilePic } = req.body;
     await User.findByIdAndUpdate(decoded.userId, { profilePic });
     res.json({ message: "Profile updated successfully" });
-  } catch (err) {
-    res.status(500).json({ error: "Failed to update profile pic" });
-  }
+  } catch (err) { res.status(500).json({ error: "Failed to update profile pic" }); }
 });
 
 // --- REST ROUTING PIPELINES ---
@@ -96,7 +93,6 @@ app.post('/api/friend-request', auth, async (req, res) => {
   const { targetUsername } = req.body;
   const targetUser = await User.findOne({ username: targetUsername });
   if (!targetUser) return res.status(404).json({ error: 'User not found' });
-  
   if (targetUser.friendRequests.includes(req.user.userId) || targetUser.friends.includes(req.user.userId)) {
     return res.status(400).json({ error: 'Already sent or friends' });
   }
@@ -114,13 +110,10 @@ app.get('/api/dashboard', auth, async (req, res) => {
 });
 
 app.get('/api/messages/:friendId', auth, async (req, res) => {
-  // Jab chat open ho, toh samne waale ke saare messages ko read mark karo
   await Message.updateMany(
     { sender: req.params.friendId, receiver: req.user.userId, status: { $ne: 'read' } },
     { $set: { status: 'read' } }
   );
-  
-  // Notify sender that messages are read
   io.to(req.params.friendId).emit('messagesMarkedRead', { by: req.user.userId });
 
   const messages = await Message.find({
@@ -132,7 +125,7 @@ app.get('/api/messages/:friendId', auth, async (req, res) => {
   res.json(messages);
 });
 
-// --- REAL-TIME CORE SOCKET MANAGEMENT ---
+// --- REAL-TIME CORE SOCKET & CALLING ROUTINES ---
 const onlineUsers = new Map();
 
 io.on('connection', (socket) => {
@@ -148,30 +141,30 @@ io.on('connection', (socket) => {
 
   socket.on('sendMessage', async ({ senderId, receiverId, text, fileUrl, fileName, fileType }) => {
     const receiverOnline = onlineUsers.has(receiverId);
-    // Agar samne wala online hai to double tick (delivered), nahi to single tick (sent)
     const currentStatus = receiverOnline ? 'delivered' : 'sent';
-
-    const msgData = { 
-      sender: senderId, 
-      receiver: receiverId, 
-      text, 
-      fileUrl, 
-      fileName, 
-      fileType,
-      status: currentStatus 
-    };
-    
+    const msgData = { sender: senderId, receiver: receiverId, text, fileUrl, fileName, fileType, status: currentStatus };
     const msg = new Message(msgData);
     await msg.save();
-    
     io.to(receiverId).emit('receiveMessage', msg);
     io.to(senderId).emit('receiveMessage', msg);
   });
 
-  // Jab user chat box open rakhe hue ho aur live chat chal rhi ho
   socket.on('readEmit', async ({ msgId, senderId }) => {
      await Message.findByIdAndUpdate(msgId, { status: 'read' });
      io.to(senderId).emit('msgStatusUpdate', { msgId, status: 'read' });
+  });
+
+  // --- WEBRTC CALLING CHANNELS ---
+  socket.on('callUser', ({ to, from, signalData, type }) => {
+    io.to(to).emit('incomingCall', { from, signal: signalData, type });
+  });
+
+  socket.on('answerCall', ({ to, signal }) => {
+    io.to(to).emit('callAccepted', signal);
+  });
+
+  socket.on('endCallEmit', ({ to }) => {
+    io.to(to).emit('callEnded');
   });
 
   socket.on('disconnect', async () => {
