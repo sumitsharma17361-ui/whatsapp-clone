@@ -3,7 +3,7 @@ let token = localStorage.getItem('token');
 let userId = localStorage.getItem('userId');
 let username = localStorage.getItem('username');
 let activeFriendId = null;
-let selectedFileData = null; // Temporary file storage
+let selectedFile = null;
 
 const headers = () => ({
   'Content-Type': 'application/json',
@@ -11,6 +11,14 @@ const headers = () => ({
 });
 
 window.onload = () => { if (token) showDashboard(); };
+
+function toggleSidebar(show) {
+  const sidebar = document.getElementById('sidebar');
+  if(window.innerWidth <= 768) {
+    if(show) sidebar.classList.remove('mobile-hidden');
+    else sidebar.classList.add('mobile-hidden');
+  }
+}
 
 async function authAction(endpoint) {
   const u = document.getElementById('auth-username').value;
@@ -28,7 +36,7 @@ async function authAction(endpoint) {
     localStorage.setItem('userId', data.userId);
     localStorage.setItem('username', data.username);
     token = data.token; userId = data.userId; username = data.username;
-    showDashboard();
+    window.location.reload();
   } else {
     alert('Registered! Please login.');
   }
@@ -68,13 +76,13 @@ async function loadDashboardData() {
   const reqList = document.getElementById('requests-list');
   reqList.innerHTML = '';
   data.friendRequests.forEach(req => {
-    reqList.innerHTML += `<div class="list-item"><span>${req.username}</span><button onclick="acceptFriend('${req._id}')">Accept</button></div>`;
+    reqList.innerHTML += `<div class="list-item"><span>${req.username}</span><button class="btn-small" onclick="acceptFriend('${req._id}')">Accept</button></div>`;
   });
 
   const friendsList = document.getElementById('friends-list');
   friendsList.innerHTML = '';
   data.friends.forEach(f => {
-    friendsList.innerHTML += `<div class="list-item" onclick="openChat('${f._id}', '${f.username}', ${f.isOnline})"><span>${f.username}</span><span id="status-${f._id}">${f.isOnline ? 'Online' : 'Offline'}</span></div>`;
+    friendsList.innerHTML += `<div class="list-item" onclick="openChat('${f._id}', '${f.username}', ${f.isOnline})"><span>${f.username}</span><span id="status-${f._id}" style="color:${f.isOnline ? '#25d366':'#8696a0'}">${f.isOnline ? 'Online' : 'Offline'}</span></div>`;
   });
 }
 
@@ -97,6 +105,7 @@ async function acceptFriend(requesterId) {
 
 async function openChat(friendId, friendName, isOnline) {
   activeFriendId = friendId;
+  toggleSidebar(false);
   document.getElementById('chat-placeholder').classList.add('hidden');
   document.getElementById('active-chat').classList.remove('hidden');
   document.getElementById('active-friend-name').innerText = friendName;
@@ -109,99 +118,68 @@ async function openChat(friendId, friendName, isOnline) {
   messages.forEach(renderSingleMessage);
 }
 
-// --- FILE SELECTION SYSTEM ---
 function handleFileSelect(input) {
   const file = input.files[0];
   if (!file) return;
-
-  const reader = new FileReader();
-  reader.onload = function(e) {
-    selectedFileData = {
-      name: file.name,
-      type: file.type,
-      data: e.target.result // Base64 String
-    };
-    document.getElementById('message-input').value = `[Selected File: ${file.name}]`;
-  };
-  reader.readAsDataURL(file);
+  selectedFile = file;
+  document.getElementById('message-input').value = `📷 ${file.name} (Ready to send)`;
 }
 
-// --- MESSAGE RENDER WITH MEDIA DOWNLOADS ---
 function renderSingleMessage(msg) {
   const display = document.getElementById('messages-display');
   const type = msg.sender === userId ? 'sent' : 'received';
+  let contentHtml = '<div class="media-box">';
   
-  let contentHtml = '';
-  
-  // Agar text message hai
-  if (msg.text && !msg.fileUrl) {
-      contentHtml = `<div>${msg.text}</div>`;
-  } 
-  // Agar file bheji gayi hai
-  else if (msg.fileUrl) {
+  if (msg.fileUrl) {
       if (msg.fileType.startsWith('image/')) {
-          contentHtml = `<img src="${msg.fileUrl}" style="max-width: 100%; border-radius: 4px; display: block; margin-bottom: 5px;">`;
+          contentHtml += `<img src="${msg.fileUrl}">`;
       } else if (msg.fileType.startsWith('video/')) {
-          contentHtml = `<video src="${msg.fileUrl}" controls style="max-width: 100%; border-radius: 4px; display: block; margin-bottom: 5px;"></video>`;
-      } else if (msg.fileType.startsWith('audio/')) {
-          contentHtml = `<audio src="${msg.fileUrl}" controls style="max-width: 100%; margin-bottom: 5px;"></audio>`;
+          contentHtml += `<video src="${msg.fileUrl}" controls></video>`;
       } else {
-          contentHtml = `<div style="font-weight: bold; color: #526069;">📄 ${msg.fileName}</div>`;
+          contentHtml += `<div style="padding:10px; background:#0000000d; border-radius:6px; margin-bottom:5px;">📄 ${msg.fileName}</div>`;
       }
-      // WhatsApp jaisa Download button har media ke liye
-      contentHtml += `<a href="${msg.fileUrl}" download="${msg.fileName}" style="display: inline-block; background: #00a884; color: white; text-decoration: none; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: bold; margin-top: 5px;">⬇️ Download</a>`;
-      
-      if (msg.text && !msg.text.startsWith('[Selected File:')) {
-          contentHtml += `<div style="margin-top: 5px;">${msg.text}</div>`;
-      }
+      contentHtml += `<a href="${msg.fileUrl}" download="${msg.fileName}" style="color:#00a884; text-decoration:none; font-size:12px; font-weight:bold; display:block; margin-top:4px;">⬇ Download</a>`;
   }
+  
+  if (msg.text && !msg.text.includes('(Ready to send)')) {
+      contentHtml += `<p style="margin-top:4px;">${msg.text}</p>`;
+  }
+  contentHtml += '</div>';
 
   display.innerHTML += `<div class="msg ${type}">${contentHtml}</div>`;
   display.scrollTop = display.scrollHeight;
 }
 
-// --- SEND MESSAGE WITH FILE ---
+// INSTANT UPLOAD VIA WEBSOCKET BINARY UPLOAD
 async function sendMessage() {
   const input = document.getElementById('message-input');
   let textToSend = input.value.trim();
-  if (!textToSend && !selectedFileData) return;
-  if (!activeFriendId) return;
+  if (!textToSend && !selectedFile) return;
 
-  let uploadedFileUrl = null;
-  let nameOfFile = null;
-  let typeOfFile = null;
-
-  // Agar user ne koi file select ki hai to pehle upload karenge
-  if (selectedFileData) {
-      input.value = "Uploading file...";
-      const uploadRes = await fetch('/api/upload', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ fileName: selectedFileData.name, fileData: selectedFileData.data })
+  if (selectedFile) {
+    input.value = "Sending instantly...";
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      if (textToSend.includes('(Ready to send)')) textToSend = "";
+      
+      // Direct WebSocket fast upload channel
+      socket.emit('sendMessage', { 
+          senderId: userId, 
+          receiverId: activeFriendId, 
+          text: textToSend,
+          fileUrl: e.target.result, // Base64 raw socket data
+          fileName: selectedFile.name,
+          fileType: selectedFile.type
       });
-      const uploadData = await uploadRes.json();
-      if (uploadData.fileUrl) {
-          uploadedFileUrl = uploadData.fileUrl;
-          nameOfFile = selectedFileData.name;
-          typeOfFile = selectedFileData.type;
-      }
-      if (textToSend.startsWith('[Selected File:')) {
-          textToSend = ""; // Agar caption nahi tha to text blank kar do
-      }
-      selectedFileData = null; // Reset temporary storage
-      document.getElementById('file-input').value = ""; // Reset file tag
+      selectedFile = null;
+      document.getElementById('file-input').value = "";
+      input.value = '';
+    };
+    reader.readAsDataURL(selectedFile);
+  } else {
+    socket.emit('sendMessage', { senderId: userId, receiverId: activeFriendId, text: textToSend });
+    input.value = '';
   }
-
-  socket.emit('sendMessage', { 
-      senderId: userId, 
-      receiverId: activeFriendId, 
-      text: textToSend,
-      fileUrl: uploadedFileUrl,
-      fileName: nameOfFile,
-      fileType: typeOfFile
-  });
-  
-  input.value = '';
 }
 
 function logout() { localStorage.clear(); window.location.reload(); }
