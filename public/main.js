@@ -5,28 +5,32 @@ let username = localStorage.getItem('username');
 let activeFriendId = null;
 let selectedFile = null;
 
+// Audio Note Recording Variables
+let mediaRecorder;
+let audioChunks = [];
+let isRecording = false;
+
 const headers = () => ({
   'Content-Type': 'application/json',
   'Authorization': localStorage.getItem('token')
 });
 
-window.onload = () => { if (token) showDashboard(); };
+window.onload = () => {
+  if (token) {
+    showDashboard();
+    if(localStorage.getItem('profilePic')) {
+      document.getElementById('my-avatar').src = localStorage.getItem('profilePic');
+    }
+  }
+  setupMic();
+};
 
-// SMART MOBILE SIDEBAR & CHAT TOGGLE SYSTEM FIX
 function toggleSidebar(show) {
   const sidebar = document.getElementById('sidebar');
   const chatArea = document.getElementById('chat-area');
-  
   if (window.innerWidth <= 768) {
-    if (show) {
-      // Dosto ki list dikhao, chat chhipao
-      sidebar.classList.remove('mobile-hidden');
-      chatArea.classList.add('mobile-hidden');
-    } else {
-      // Dosto ki list chhipao, chat screen dikhao
-      sidebar.classList.add('mobile-hidden');
-      chatArea.classList.remove('mobile-hidden');
-    }
+    if (show) { sidebar.classList.remove('mobile-hidden'); chatArea.classList.add('mobile-hidden'); }
+    else { sidebar.classList.add('mobile-hidden'); chatArea.classList.remove('mobile-hidden'); }
   }
 }
 
@@ -45,11 +49,29 @@ async function authAction(endpoint) {
     localStorage.setItem('token', data.token);
     localStorage.setItem('userId', data.userId);
     localStorage.setItem('username', data.username);
-    token = data.token; userId = data.userId; username = data.username;
+    if(data.profilePic) localStorage.setItem('profilePic', data.profilePic);
     window.location.reload();
   } else {
     alert('Registered! Please login.');
   }
+}
+
+// PROFILE PICTURE UPDATE HANDLER
+async function uploadProfilePic(input) {
+  const file = input.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = async (e) => {
+    const base64 = e.target.result;
+    document.getElementById('my-avatar').src = base64;
+    localStorage.setItem('profilePic', base64);
+    await fetch('/api/profile-pic', {
+      method: 'POST',
+      headers: headers(),
+      body: JSON.stringify({ profilePic: base64 })
+    });
+  };
+  reader.readAsDataURL(file);
 }
 
 function showDashboard() {
@@ -63,25 +85,44 @@ function showDashboard() {
   socket.on('receiveMessage', (msg) => {
     const msgSender = String(msg.sender._id || msg.sender);
     const msgReceiver = String(msg.receiver._id || msg.receiver);
-    const currentActive = String(activeFriendId);
-
-    if (activeFriendId && (msgSender === currentActive || msgReceiver === currentActive)) {
+    
+    if (activeFriendId && (msgSender === String(activeFriendId) || msgReceiver === String(activeFriendId))) {
       const tempBubble = document.getElementById(`temp-${msg.timestamp}`);
       if (tempBubble) tempBubble.remove();
       renderSingleMessage(msg);
+      
+      // Agar active chat me samne se message aaya to use instantly 'read' emit kro
+      if(msgSender === String(activeFriendId)) {
+         socket.emit('readEmit', { msgId: msg._id, senderId: msgSender });
+      }
     }
   });
 
-  socket.on('statusChanged', ({ userId: changedId, isOnline }) => {
-    const statusEl = document.getElementById(`status-${changedId}`);
-    if (statusEl) statusEl.innerText = isOnline ? 'Online' : 'Offline';
-    if (activeFriendId === changedId) {
-      document.getElementById('active-friend-status').innerText = isOnline ? 'Online' : 'Offline';
+  socket.on('msgStatusUpdate', ({ msgId, status }) => {
+     const tickEl = document.getElementById(`tick-${msgId}`);
+     if(tickEl) {
+        tickEl.innerHTML = status === 'read' ? '✓✓' : '✓✓';
+        if(status === 'read') tickEl.style.color = '#53bdeb'; // Blue tick color
+     }
+  });
+
+  socket.on('messagesMarkedRead', ({ by }) => {
+     if(String(by) === String(activeFriendId)) {
+        document.querySelectorAll('.tick-status').forEach(el => {
+           el.innerHTML = '✓✓';
+           el.style.color = '#53bdeb';
+        });
+     }
+  });
+
+  socket.on('statusChanged', ({ userId: changedId, isOnline, lastSeen }) => {
+    loadDashboardData();
+    if (String(activeFriendId) === String(changedId)) {
+      document.getElementById('active-friend-status').innerText = isOnline ? 'Online' : `Last seen: ${new Date(lastSeen).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`;
     }
   });
 
   socket.on('incomingFriendRequest', () => loadDashboardData());
-  socket.on('requestAccepted', () => loadDashboardData());
   loadDashboardData();
 }
 
@@ -98,34 +139,28 @@ async function loadDashboardData() {
   const friendsList = document.getElementById('friends-list');
   friendsList.innerHTML = '';
   data.friends.forEach(f => {
-    friendsList.innerHTML += `<div class="list-item" onclick="openChat('${f._id}', '${f.username}', ${f.isOnline})"><span>${f.username}</span><span id="status-${f._id}" style="color:${f.isOnline ? '#25d366':'#8696a0'}">${f.isOnline ? 'Online' : 'Offline'}</span></div>`;
+    const avatar = f.profilePic || 'https://www.w3schools.com/howto/img_avatar.png';
+    const statusText = f.isOnline ? 'Online' : 'Offline';
+    friendsList.innerHTML += `
+      <div class="list-item" onclick="openChat('${f._id}', '${f.username}', ${f.isOnline}, '${avatar}', '${f.lastSeen}')">
+        <div style="display:flex; align-items:center; gap:10px;">
+          <img src="${avatar}" style="width:35px; height:35px; border-radius:50%; object-fit:cover;">
+          <span>${f.username}</span>
+        </div>
+        <span id="status-${f._id}" style="color:${f.isOnline ? '#25d366':'#8696a0'}">${statusText}</span>
+      </div>`;
   });
 }
 
-async function sendFriendRequest() {
-  const target = document.getElementById('target-username').value;
-  const res = await fetch('/api/friend-request', {
-    method: 'POST',
-    headers: headers(),
-    body: JSON.stringify({ targetUsername: target })
-  });
-  const data = await res.json();
-  alert(data.message || data.error);
-  document.getElementById('target-username').value = '';
-}
-
-async function acceptFriend(requesterId) {
-  await fetch('/api/accept-request', { method: 'POST', headers: headers(), body: JSON.stringify({ requesterId }) });
-  loadDashboardData();
-}
-
-async function openChat(friendId, friendName, isOnline) {
+async function openChat(friendId, friendName, isOnline, avatar, lastSeen) {
   activeFriendId = friendId;
-  toggleSidebar(false); // Mobile toggle switch check
+  toggleSidebar(false);
   document.getElementById('chat-placeholder').classList.add('hidden');
   document.getElementById('active-chat').classList.remove('hidden');
   document.getElementById('active-friend-name').innerText = friendName;
-  document.getElementById('active-friend-status').innerText = isOnline ? 'Online' : 'Offline';
+  document.getElementById('active-friend-avatar').src = avatar;
+  
+  document.getElementById('active-friend-status').innerText = isOnline ? 'Online' : `Last seen: ${new Date(lastSeen).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`;
 
   const res = await fetch(`/api/messages/${friendId}`, { headers: headers() });
   const messages = await res.json();
@@ -134,19 +169,65 @@ async function openChat(friendId, friendName, isOnline) {
   messages.forEach(renderSingleMessage);
 }
 
+// --- VOICE RECORDER ENGINE ---
+function setupMic() {
+  const micBtn = document.getElementById('mic-btn');
+  if(!micBtn) return;
+  
+  micBtn.onclick = async () => {
+    if (!isRecording) {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+         return alert("Mic access not supported on this browser context.");
+      }
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaRecorder = new MediaRecorder(stream);
+      audioChunks = [];
+      
+      mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
+      mediaRecorder.onstop = async () => {
+        const audioBlob = new Blob(audioChunks, { type: 'audio/mp3' });
+        const reader = new FileReader();
+        reader.onloadend = async () => {
+           selectedFile = {
+              name: `VoiceNote-${Date.now()}.mp3`,
+              type: 'audio/mp3',
+              data: reader.result
+           };
+           document.getElementById('message-input').value = `🎙️ Voice Note (Ready to Send)`;
+        };
+        reader.readAsDataURL(audioBlob);
+      };
+      
+      mediaRecorder.start();
+      isRecording = true;
+      micBtn.innerText = "🛑";
+      micBtn.style.color = "red";
+    } else {
+      mediaRecorder.stop();
+      isRecording = false;
+      micBtn.innerText = "🎙️";
+      micBtn.style.color = "";
+    }
+  };
+}
+
 function handleFileSelect(input) {
   const file = input.files[0];
   if (!file) return;
-  selectedFile = file;
-  document.getElementById('message-input').value = `📎 ${file.name} (Ready)`;
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    selectedFile = { name: file.name, type: file.type, data: e.target.result };
+    document.getElementById('message-input').value = `📎 ${file.name} (Ready)`;
+  };
+  reader.readAsDataURL(file);
 }
 
 function renderSingleMessage(msg) {
   const display = document.getElementById('messages-display');
   const msgSenderId = String(msg.sender._id || msg.sender);
   const currentLoggedUserId = String(userId);
-  
   const type = msgSenderId === currentLoggedUserId ? 'sent' : 'received';
+  
   let contentHtml = '<div class="media-box">';
   
   if (msg.fileUrl) {
@@ -154,17 +235,28 @@ function renderSingleMessage(msg) {
           contentHtml += `<img src="${msg.fileUrl}">`;
       } else if (msg.fileType.startsWith('video/')) {
           contentHtml += `<video src="${msg.fileUrl}" controls></video>`;
+      } else if (msg.fileType.startsWith('audio/')) {
+          contentHtml += `<audio src="${msg.fileUrl}" controls style="max-width:100%;"></audio>`;
       } else {
           contentHtml += `<div style="padding:10px; background:#0000000d; border-radius:6px; margin-bottom:5px;">📄 ${msg.fileName}</div>`;
       }
-      contentHtml += `<a href="${msg.fileUrl}" download="${msg.fileName}" style="color:#00a884; text-decoration:none; font-size:12px; font-weight:bold; display:block; margin-top:4px;">⬇ Download</a>`;
   }
   
   if (msg.text && !msg.text.includes('(Ready)')) {
       contentHtml += `<p style="margin-top:4px;">${msg.text}</p>`;
   }
-  contentHtml += '</div>';
 
+  // WHATSAPP STYLE TICK RENDER LOGIC
+  if(type === 'sent') {
+     let tickSymbol = '✓'; // Single tick default
+     let tickColor = '#8696a0'; // Grey
+     if(msg.status === 'delivered' || msg.status === 'read') tickSymbol = '✓✓';
+     if(msg.status === 'read') tickColor = '#53bdeb'; // Blue Tick
+     
+     contentHtml += `<span class="tick-status" id="tick-${msg._id}" style="float:right; font-size:11px; margin-left:5px; color:${tickColor}; font-weight:bold;">${tickSymbol}</span>`;
+  }
+
+  contentHtml += '</div>';
   display.innerHTML += `<div class="msg ${type}">${contentHtml}</div>`;
   display.scrollTop = display.scrollHeight;
 }
@@ -175,70 +267,30 @@ async function sendMessage() {
   if (!textToSend && !selectedFile) return;
 
   if (selectedFile) {
-    const file = selectedFile;
+    const filePayload = selectedFile;
     selectedFile = null;
-    document.getElementById('file-input').value = "";
-    input.value = '';
-
+    input.value = "Sending...";
+    
     if (textToSend.includes('(Ready)')) textToSend = "";
 
-    const timestamp = Date.now();
-    const display = document.getElementById('messages-display');
+    const res = await fetch("/api/upload", {
+       method: "POST",
+       headers: { "Content-Type": "application/json" },
+       body: JSON.stringify({ fileName: filePayload.name, fileData: filePayload.data })
+    });
+    const data = await res.json();
     
-    display.innerHTML += `
-      <div class="msg sent" id="temp-${timestamp}">
-        <div class="media-box">
-          <div style="font-size:13px; margin-bottom: 5px;">📤 Sending: ${file.name}</div>
-          <div class="progress-container">
-            <div class="progress-bar" id="progress-${timestamp}" style="width: 0%;"></div>
-          </div>
-          <span id="percent-${timestamp}" style="font-size:11px; color:#667781;">0%</span>
-        </div>
-      </div>
-    `;
-    display.scrollTop = display.scrollHeight;
-
-    const reader = new FileReader();
-    reader.onload = async function(e) {
-      const base64Data = e.target.result;
-      
-      const xhr = new XMLHttpRequest();
-      xhr.open("POST", "/api/upload", true);
-      xhr.setRequestHeader("Content-Type", "application/json");
-
-      xhr.upload.onprogress = function(event) {
-        if (event.lengthComputable) {
-          const percentComplete = Math.round((event.loaded / event.total) * 100);
-          document.getElementById(`progress-${timestamp}`).style.width = percentComplete + '%';
-          document.getElementById(`percent-${timestamp}`).innerText = percentComplete + '%';
-        }
-      };
-
-      xhr.onload = function() {
-        if (xhr.status === 200) {
-          const response = JSON.parse(xhr.responseText);
-          if (response.fileUrl) {
-            socket.emit('sendMessage', { 
-                senderId: userId, 
-                receiverId: activeFriendId, 
-                text: textToSend,
-                fileUrl: response.fileUrl, 
-                fileName: file.name,
-                fileType: file.type,
-                timestamp: timestamp
-            });
-          }
-        } else {
-          alert("Upload failed.");
-          document.getElementById(`temp-${timestamp}`).remove();
-        }
-      };
-
-      sendData = JSON.stringify({ fileName: file.name, fileData: base64Data });
-      xhr.send(sendData);
-    };
-    reader.readAsDataURL(file);
-
+    if(data.fileUrl) {
+       socket.emit('sendMessage', { 
+          senderId: userId, 
+          receiverId: activeFriendId, 
+          text: textToSend,
+          fileUrl: data.fileUrl, 
+          fileName: filePayload.name,
+          fileType: filePayload.type
+       });
+    }
+    input.value = '';
   } else {
     socket.emit('sendMessage', { senderId: userId, receiverId: activeFriendId, text: textToSend });
     input.value = '';
