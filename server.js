@@ -29,6 +29,9 @@ mongoose.connect(process.env.MONGODB_URI)
   .then(() => console.log('MongoDB Connected'))
   .catch(err => console.error('DB Connection Error:', err));
 
+// Temporary memory store for OTP simulation
+const otpStorage = new Map();
+
 app.post('/api/upload', async (req, res) => {
   try {
     const { fileName, fileData } = req.body;
@@ -39,11 +42,8 @@ app.post('/api/upload', async (req, res) => {
     const filePath = path.join(UPLOADS_DIR, uniqueFileName);
 
     fs.writeFileSync(filePath, buffer);
-    const fileUrl = `/uploads/${uniqueFileName}`;
-    res.json({ fileUrl });
-  } catch (err) {
-    res.status(500).json({ error: 'File upload failed' });
-  }
+    res.json({ fileUrl: `/uploads/${uniqueFileName}` });
+  } catch (err) { res.status(500).json({ error: 'Upload failed' }); }
 });
 
 app.post('/api/profile-pic', async (req, res) => {
@@ -51,20 +51,52 @@ app.post('/api/profile-pic', async (req, res) => {
     const authHeader = req.headers['authorization'];
     const decoded = jwt.verify(authHeader, JWT_SECRET);
     await User.findByIdAndUpdate(decoded.userId, { profilePic: req.body.profilePic });
-    res.json({ message: "Profile updated successfully" });
-  } catch (err) { res.status(500).json({ error: "Failed to update profile pic" }); }
+    res.json({ message: "Profile updated" });
+  } catch (err) { res.status(500).json({ error: "Failed" }); }
 });
 
+// --- REGISTER WITH PHONE & USERNAME ---
 app.post('/api/register', async (req, res) => {
   try {
-    const { username, password } = req.body;
+    const { username, phoneNumber, password } = req.body;
     const hashedPassword = await bcrypt.hash(password, 10);
-    const user = new User({ username, password: hashedPassword });
+    const user = new User({ username, phoneNumber, password: hashedPassword });
     await user.save();
-    res.status(201).json({ message: 'User registered successfully' });
-  } catch (err) { res.status(400).json({ error: 'Username already exists' }); }
+    res.status(201).json({ message: 'Registered successfully' });
+  } catch (err) { res.status(400).json({ error: 'Username or Phone already exists' }); }
 });
 
+// --- STEP 1: REQUEST OTP FOR MOBILE LOGIN ---
+app.post('/api/request-otp', async (req, res) => {
+  const { phoneNumber } = req.body;
+  const user = await User.findOne({ phoneNumber });
+  if (!user) return res.status(404).json({ error: 'Mobile number not registered!' });
+
+  // Generate 4 digit random OTP
+  const simulatedOtp = Math.floor(1000 + Math.random() * 9000).toString();
+  otpStorage.set(phoneNumber, simulatedOtp);
+
+  // Return OTP in response for direct on-screen testing convenience
+  res.json({ message: 'OTP sent successfully', otp: simulatedOtp });
+});
+
+// --- STEP 2: VERIFY OTP AND LOGIN ---
+app.post('/api/verify-otp', async (req, res) => {
+  const { phoneNumber, otp } = req.body;
+  const storedOtp = otpStorage.get(phoneNumber);
+
+  if (!storedOtp || storedOtp !== otp) {
+    return res.status(400).json({ error: 'Invalid or expired OTP' });
+  }
+
+  otpStorage.delete(phoneNumber); // Clear OTP after success
+  const user = await User.findOne({ phoneNumber });
+  
+  const token = jwt.sign({ userId: user._id, username: user.username }, JWT_SECRET);
+  res.json({ token, userId: user._id, username: user.username, profilePic: user.profilePic });
+});
+
+// Standard Password Login (Fallback)
 app.post('/api/login', async (req, res) => {
   const { username, password } = req.body;
   const user = await User.findOne({ username });
@@ -77,9 +109,9 @@ app.post('/api/login', async (req, res) => {
 
 const auth = (req, res, next) => {
   const token = req.headers['authorization'];
-  if (!token) return res.status(401).json({ error: 'No token provided' });
+  if (!token) return res.status(401).json({ error: 'No token' });
   jwt.verify(token, JWT_SECRET, (err, decoded) => {
-    if (err) return res.status(401).json({ error: 'Invalid token' });
+    if (err) return res.status(401).json({ error: 'Invalid' });
     req.user = decoded;
     next();
   });
@@ -95,7 +127,7 @@ app.post('/api/friend-request', auth, async (req, res) => {
   targetUser.friendRequests.push(req.user.userId);
   await targetUser.save();
   io.to(targetUser._id.toString()).emit('incomingFriendRequest');
-  res.json({ message: 'Friend request sent' });
+  res.json({ message: 'Request sent' });
 });
 
 app.get('/api/dashboard', auth, async (req, res) => {
@@ -109,7 +141,6 @@ app.post('/api/accept-request', auth, async (req, res) => {
   const { requesterId } = req.body;
   const user = await User.findById(req.user.userId);
   const requester = await User.findById(requesterId);
-  if (!user.friendRequests.includes(requesterId)) return res.status(400).json({ error: 'No request' });
   user.friendRequests = user.friendRequests.filter(id => id.toString() !== requesterId);
   user.friends.push(requesterId);
   requester.friends.push(user._id);
