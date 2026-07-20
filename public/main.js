@@ -3,6 +3,7 @@ let token = localStorage.getItem('token');
 let userId = localStorage.getItem('userId');
 let username = localStorage.getItem('username');
 let activeFriendId = null;
+let selectedFileData = null; // Temporary file storage
 
 const headers = () => ({
   'Content-Type': 'application/json',
@@ -108,17 +109,98 @@ async function openChat(friendId, friendName, isOnline) {
   messages.forEach(renderSingleMessage);
 }
 
+// --- FILE SELECTION SYSTEM ---
+function handleFileSelect(input) {
+  const file = input.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    selectedFileData = {
+      name: file.name,
+      type: file.type,
+      data: e.target.result // Base64 String
+    };
+    document.getElementById('message-input').value = `[Selected File: ${file.name}]`;
+  };
+  reader.readAsDataURL(file);
+}
+
+// --- MESSAGE RENDER WITH MEDIA DOWNLOADS ---
 function renderSingleMessage(msg) {
   const display = document.getElementById('messages-display');
   const type = msg.sender === userId ? 'sent' : 'received';
-  display.innerHTML += `<div class="msg ${type}">${msg.text}</div>`;
+  
+  let contentHtml = '';
+  
+  // Agar text message hai
+  if (msg.text && !msg.fileUrl) {
+      contentHtml = `<div>${msg.text}</div>`;
+  } 
+  // Agar file bheji gayi hai
+  else if (msg.fileUrl) {
+      if (msg.fileType.startsWith('image/')) {
+          contentHtml = `<img src="${msg.fileUrl}" style="max-width: 100%; border-radius: 4px; display: block; margin-bottom: 5px;">`;
+      } else if (msg.fileType.startsWith('video/')) {
+          contentHtml = `<video src="${msg.fileUrl}" controls style="max-width: 100%; border-radius: 4px; display: block; margin-bottom: 5px;"></video>`;
+      } else if (msg.fileType.startsWith('audio/')) {
+          contentHtml = `<audio src="${msg.fileUrl}" controls style="max-width: 100%; margin-bottom: 5px;"></audio>`;
+      } else {
+          contentHtml = `<div style="font-weight: bold; color: #526069;">📄 ${msg.fileName}</div>`;
+      }
+      // WhatsApp jaisa Download button har media ke liye
+      contentHtml += `<a href="${msg.fileUrl}" download="${msg.fileName}" style="display: inline-block; background: #00a884; color: white; text-decoration: none; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: bold; margin-top: 5px;">⬇️ Download</a>`;
+      
+      if (msg.text && !msg.text.startsWith('[Selected File:')) {
+          contentHtml += `<div style="margin-top: 5px;">${msg.text}</div>`;
+      }
+  }
+
+  display.innerHTML += `<div class="msg ${type}">${contentHtml}</div>`;
   display.scrollTop = display.scrollHeight;
 }
 
-function sendMessage() {
+// --- SEND MESSAGE WITH FILE ---
+async function sendMessage() {
   const input = document.getElementById('message-input');
-  if (!input.value.trim() || !activeFriendId) return;
-  socket.emit('sendMessage', { senderId: userId, receiverId: activeFriendId, text: input.value });
+  let textToSend = input.value.trim();
+  if (!textToSend && !selectedFileData) return;
+  if (!activeFriendId) return;
+
+  let uploadedFileUrl = null;
+  let nameOfFile = null;
+  let typeOfFile = null;
+
+  // Agar user ne koi file select ki hai to pehle upload karenge
+  if (selectedFileData) {
+      input.value = "Uploading file...";
+      const uploadRes = await fetch('/api/upload', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ fileName: selectedFileData.name, fileData: selectedFileData.data })
+      });
+      const uploadData = await uploadRes.json();
+      if (uploadData.fileUrl) {
+          uploadedFileUrl = uploadData.fileUrl;
+          nameOfFile = selectedFileData.name;
+          typeOfFile = selectedFileData.type;
+      }
+      if (textToSend.startsWith('[Selected File:')) {
+          textToSend = ""; // Agar caption nahi tha to text blank kar do
+      }
+      selectedFileData = null; // Reset temporary storage
+      document.getElementById('file-input').value = ""; // Reset file tag
+  }
+
+  socket.emit('sendMessage', { 
+      senderId: userId, 
+      receiverId: activeFriendId, 
+      text: textToSend,
+      fileUrl: uploadedFileUrl,
+      fileName: nameOfFile,
+      fileType: typeOfFile
+  });
+  
   input.value = '';
 }
 
