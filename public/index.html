@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>WhatsApp Ultra</title>
+  <title>WhatsApp Ultra Call</title>
   <link rel="stylesheet" href="style.css">
   <script src="/socket.io/socket.io.js"></script>
 </head>
@@ -24,14 +24,12 @@
     <div class="sidebar" id="sidebar">
       <div class="sidebar-header">
         <div style="display: flex; align-items: center; gap: 10px;">
-          <!-- Profile Pic Section -->
           <input type="file" id="avatar-input" style="display:none;" accept="image/*" onchange="uploadProfilePic(this)">
           <img id="my-avatar" src="https://www.w3schools.com/howto/img_avatar.png" onclick="document.getElementById('avatar-input').click()" style="width: 40px; height: 40px; border-radius: 50%; object-fit: cover; cursor: pointer;">
           <h3 id="current-user-display">My Profile</h3>
         </div>
         <button onclick="logout()" class="btn-small">Logout</button>
       </div>
-      
       <div class="search-box">
         <input type="text" id="target-username" placeholder="Add friend username...">
         <button onclick="sendFriendRequest()">+</button>
@@ -48,12 +46,19 @@
       </div>
       
       <div id="active-chat" class="chat-window hidden">
-        <div class="chat-header">
-          <button id="back-btn" onclick="toggleSidebar(true)" style="background:transparent; color:#111b21; font-size:22px; padding:5px 10px; border:none; font-weight:bold;">⬅</button>
-          <img id="active-friend-avatar" src="https://www.w3schools.com/howto/img_avatar.png" style="width: 40px; height: 40px; border-radius: 50%; object-fit: cover;">
-          <div class="header-info">
-            <span id="active-friend-name">Friend Name</span>
-            <span id="active-friend-status" class="status-indicator">Offline</span>
+        <div class="chat-header" style="display: flex; align-items: center; justify-content: space-between;">
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <button id="back-btn" onclick="toggleSidebar(true)" style="background:transparent; color:#111b21; font-size:22px; padding:5px; border:none;">⬅</button>
+            <img id="active-friend-avatar" src="https://www.w3schools.com/howto/img_avatar.png" style="width: 40px; height: 40px; border-radius: 50%; object-fit: cover;">
+            <div class="header-info">
+              <span id="active-friend-name">Friend Name</span>
+              <span id="active-friend-status" class="status-indicator">Offline</span>
+            </div>
+          </div>
+          <!-- Calling Controls -->
+          <div style="display: flex; gap: 15px; margin-right: 10px;">
+            <button onclick="startCall('audio')" style="background:transparent; font-size:20px; border:none; cursor:pointer;">📞</button>
+            <button onclick="startCall('video')" style="background:transparent; font-size:20px; border:none; cursor:pointer;">🎥</button>
           </div>
         </div>
         
@@ -62,15 +67,36 @@
         <div class="chat-input-area">
           <input type="file" id="file-input" style="display: none;" onchange="handleFileSelect(this)">
           <button class="attach-btn" onclick="document.getElementById('file-input').click()">📎</button>
-          
           <input type="text" id="message-input" placeholder="Type a message...">
-          
-          <!-- Audio Note Mic Button -->
           <button id="mic-btn" style="background:transparent; font-size:22px; border:none; cursor:pointer; padding:0 5px;">🎙️</button>
-          
           <button class="send-btn" onclick="sendMessage()">Send</button>
         </div>
       </div>
+    </div>
+  </div>
+
+  <!-- Real-time Full Screen Calling Overlay Box -->
+  <div id="call-overlay" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100dvh; background: rgba(17, 27, 33, 0.95); z-index: 999; flex-direction: column; align-items: center; justify-content: space-between; padding: 40px; color: white;">
+    <div style="text-align: center;">
+      <h2 id="call-user-name">Friend Name</h2>
+      <p id="call-status-text" style="color:#8696a0; margin-top:5px;">Ringing...</p>
+    </div>
+
+    <!-- Video Containers for Live Feeds -->
+    <div id="video-grid" style="position: relative; width: 100%; max-width: 400px; height: 50vh; display: none; background: #222; border-radius: 12px; overflow: hidden;">
+      <video id="remote-video" autoplay playsinline style="width: 100%; height: 100%; object-fit: cover;"></video>
+      <video id="local-video" autoplay playsinline muted style="position: absolute; bottom: 15px; right: 15px; width: 100px; height: 140px; object-fit: cover; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.3); border:2px solid #fff;"></video>
+    </div>
+
+    <!-- Incoming Call Invitation UI Box -->
+    <div id="call-invite-ui" style="display: none; gap: 40px;">
+      <button onclick="answerIncomingCall()" style="background:#25d366; width:60px; height:60px; border-radius:50%; font-size:24px; padding:0;">🤙</button>
+      <button onclick="endCall()" style="background:#ea0038; width:60px; height:60px; border-radius:50%; font-size:24px; padding:0;">🛑</button>
+    </div>
+
+    <!-- Active Ongoing Controls -->
+    <div id="call-active-ui">
+      <button onclick="endCall()" style="background:#ea0038; width:60px; height:60px; border-radius:50%; font-size:24px; padding:0;">🛑</button>
     </div>
   </div>
 
