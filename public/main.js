@@ -15,45 +15,60 @@ let jitsiApi = null;
 
 const headers = () => ({ 'Content-Type': 'application/json', 'Authorization': localStorage.getItem('token') });
 
-// FIXED: Removed missing setupMic call that was crashing the script execution
+// Sabse safe window load aur elements check
 window.onload = () => {
   if (token) {
     showDashboard();
-    if(localStorage.getItem('profilePic')) document.getElementById('my-avatar').src = localStorage.getItem('profilePic');
+    if(localStorage.getItem('profilePic')) {
+      const avatarEl = document.getElementById('my-avatar');
+      if (avatarEl) avatarEl.src = localStorage.getItem('profilePic');
+    }
   }
 };
 
 function toggleSidebar(show) {
   const sidebar = document.getElementById('sidebar');
   const chatArea = document.getElementById('chat-area');
-  if (window.innerWidth <= 768) {
+  if (sidebar && chatArea && window.innerWidth <= 768) {
     if (show) { sidebar.classList.remove('mobile-hidden'); chatArea.classList.add('mobile-hidden'); }
     else { sidebar.classList.add('mobile-hidden'); chatArea.classList.remove('mobile-hidden'); }
   }
 }
 
+// SAFE AUTHENTICATION ENGINE (Login/Register)
 async function authAction(endpoint) {
-  const u = document.getElementById('auth-username').value;
-  const p = document.getElementById('auth-password').value;
-  
-  if (!u || !p) return alert("Please fill all fields");
+  try {
+    const uEl = document.getElementById('auth-username');
+    const pEl = document.getElementById('auth-password');
+    
+    if (!uEl || !pEl) return alert("UI Elements missing, please refresh.");
+    
+    const u = uEl.value.trim();
+    const p = pEl.value.trim();
+    
+    if (!u || !p) return alert("Please fill all fields");
 
-  const res = await fetch(endpoint, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username: u, password: p })
-  });
-  const data = await res.json();
-  if (data.error) return alert(data.error);
-  
-  if (endpoint.includes('login')) {
-    localStorage.setItem('token', data.token);
-    localStorage.setItem('userId', data.userId);
-    localStorage.setItem('username', data.username);
-    if(data.profilePic) localStorage.setItem('profilePic', data.profilePic);
-    window.location.reload();
-  } else { 
-    alert('Registered successfully! Please login.'); 
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: u, password: p })
+    });
+    
+    const data = await res.json();
+    if (data.error) return alert(data.error);
+    
+    if (endpoint.includes('login')) {
+      localStorage.setItem('token', data.token);
+      localStorage.setItem('userId', data.userId);
+      localStorage.setItem('username', data.username);
+      if(data.profilePic) localStorage.setItem('profilePic', data.profilePic);
+      window.location.reload();
+    } else { 
+      alert('Registered successfully! Now enter details and click Login.'); 
+    }
+  } catch (err) {
+    console.error(err);
+    alert("Connection error. Server is starting up, please wait 30 seconds and try again.");
   }
 }
 
@@ -71,9 +86,13 @@ async function uploadProfilePic(input) {
 }
 
 function showDashboard() {
-  document.getElementById('auth-screen').classList.add('hidden');
-  document.getElementById('app-screen').classList.remove('hidden');
-  document.getElementById('current-user-display').innerText = username;
+  const authEl = document.getElementById('auth-screen');
+  const appEl = document.getElementById('app-screen');
+  const userDisp = document.getElementById('current-user-display');
+  
+  if (authEl) authEl.classList.add('hidden');
+  if (appEl) appEl.classList.remove('hidden');
+  if (userDisp) userDisp.innerText = username;
   
   socket = io();
   socket.emit('identify', userId);
@@ -106,21 +125,26 @@ function showDashboard() {
   socket.on('statusChanged', ({ userId: changedId, isOnline, lastSeen }) => {
     loadDashboardData();
     if (String(activeFriendId) === String(changedId)) {
-      document.getElementById('active-friend-status').innerText = isOnline ? 'Online' : `Last seen: ${new Date(lastSeen).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`;
+      const statusEl = document.getElementById('active-friend-status');
+      if (statusEl) statusEl.innerText = isOnline ? 'Online' : `Last seen: ${new Date(lastSeen).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`;
     }
   });
 
   socket.on('incomingFriendRequest', () => loadDashboardData());
   
   socket.on('incomingCall', ({ from, signal }) => {
-      document.getElementById('caller-name-display').innerText = from;
+      const nameDisp = document.getElementById('caller-name-display');
+      if (nameDisp) nameDisp.innerText = from;
       const popup = document.getElementById('incoming-call-popup');
-      popup.style.display = 'flex';
+      if (popup) popup.style.display = 'flex';
       
-      document.getElementById('accept-call-btn').onclick = () => {
-         popup.style.display = 'none';
-         launchJitsiFrame(signal);
-      };
+      const acceptBtn = document.getElementById('accept-call-btn');
+      if (acceptBtn) {
+        acceptBtn.onclick = () => {
+           if (popup) popup.style.display = 'none';
+           launchJitsiFrame(signal);
+        };
+      }
   });
 
   socket.on('callEnded', () => { closeActiveCall(); });
@@ -132,40 +156,53 @@ async function loadDashboardData() {
   const res = await fetch('/api/dashboard', { headers: headers() });
   const data = await res.json();
   const reqList = document.getElementById('requests-list');
-  reqList.innerHTML = '';
-  data.friendRequests.forEach(req => {
-    reqList.innerHTML += `<div class="list-item"><span>${req.username}</span><button class="btn-small" onclick="acceptFriend('${req._id}')">Accept</button></div>`;
-  });
+  if (reqList) {
+    reqList.innerHTML = '';
+    data.friendRequests.forEach(req => {
+      reqList.innerHTML += `<div class="list-item"><span>${req.username}</span><button class="btn-small" onclick="acceptFriend('${req._id}')">Accept</button></div>`;
+    });
+  }
 
   const friendsList = document.getElementById('friends-list');
-  friendsList.innerHTML = '';
-  data.friends.forEach(f => {
-    const avatar = f.profilePic || 'https://www.w3schools.com/howto/img_avatar.png';
-    friendsList.innerHTML += `
-      <div class="list-item" onclick="openChat('${f._id}', '${f.username}', ${f.isOnline}, '${avatar}', '${f.lastSeen}')">
-        <div style="display:flex; align-items:center; gap:10px;">
-          <img src="${avatar}" style="width:35px; height:35px; border-radius:50%; object-fit:cover;">
-          <span>${f.username}</span>
-        </div>
-        <span id="status-${f._id}" style="color:${f.isOnline ? '#25d366':'#8696a0'}">${f.isOnline ? 'Online' : 'Offline'}</span>
-      </div>`;
-  });
+  if (friendsList) {
+    friendsList.innerHTML = '';
+    data.friends.forEach(f => {
+      const avatar = f.profilePic || 'https://www.w3schools.com/howto/img_avatar.png';
+      friendsList.innerHTML += `
+        <div class="list-item" onclick="openChat('${f._id}', '${f.username}', ${f.isOnline}, '${avatar}', '${f.lastSeen}')">
+          <div style="display:flex; align-items:center; gap:10px;">
+            <img src="${avatar}" style="width:35px; height:35px; border-radius:50%; object-fit:cover;">
+            <span>${f.username}</span>
+          </div>
+          <span id="status-${f._id}" style="color:${f.isOnline ? '#25d366':'#8696a0'}">${f.isOnline ? 'Online' : 'Offline'}</span>
+        </div>`;
+    });
+  }
 }
 
 async function openChat(friendId, friendName, isOnline, avatar, lastSeen) {
   activeFriendId = friendId;
   toggleSidebar(false);
-  document.getElementById('chat-placeholder').classList.add('hidden');
-  document.getElementById('active-chat').classList.remove('hidden');
-  document.getElementById('active-friend-name').innerText = friendName;
-  document.getElementById('active-friend-avatar').src = avatar;
-  document.getElementById('active-friend-status').innerText = isOnline ? 'Online' : `Last seen: ${new Date(lastSeen).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`;
+  
+  const placeholder = document.getElementById('chat-placeholder');
+  const actChat = document.getElementById('active-chat');
+  const fName = document.getElementById('active-friend-name');
+  const fAvatar = document.getElementById('active-friend-avatar');
+  const fStatus = document.getElementById('active-friend-status');
+  
+  if (placeholder) placeholder.classList.add('hidden');
+  if (actChat) actChat.classList.remove('hidden');
+  if (fName) fName.innerText = friendName;
+  if (fAvatar) fAvatar.src = avatar;
+  if (fStatus) fStatus.innerText = isOnline ? 'Online' : `Last seen: ${new Date(lastSeen).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`;
 
   const res = await fetch(`/api/messages/${friendId}`, { headers: headers() });
   const messages = await res.json();
   const display = document.getElementById('messages-display');
-  display.innerHTML = '';
-  messages.forEach(renderSingleMessage);
+  if (display) {
+    display.innerHTML = '';
+    messages.forEach(renderSingleMessage);
+  }
 }
 
 function initiateJitsiCall(type) {
@@ -183,7 +220,12 @@ function initiateJitsiCall(type) {
 }
 
 function launchJitsiFrame(roomName, audioOnly = false) {
+  if (typeof JitsiMeetExternalAPI === 'undefined') {
+     return alert("Calling server is currently unreachable. Please try again in a moment.");
+  }
+  
   const container = document.getElementById('jitsi-container');
+  if (!container) return;
   container.innerHTML = ""; 
   container.style.display = 'block';
 
@@ -210,7 +252,8 @@ function launchJitsiFrame(roomName, audioOnly = false) {
 }
 
 function closeCallPopup() {
-  document.getElementById('incoming-call-popup').style.display = 'none';
+  const popup = document.getElementById('incoming-call-popup');
+  if (popup) popup.style.display = 'none';
 }
 
 function endJitsiCallSession() {
@@ -219,12 +262,15 @@ function endJitsiCallSession() {
 }
 
 function closeActiveCall() {
-  document.getElementById('jitsi-container').style.display = 'none';
-  document.getElementById('jitsi-container').innerHTML = "";
+  const container = document.getElementById('jitsi-container');
+  if (container) {
+    container.style.display = 'none';
+    container.innerHTML = "";
+  }
   if(jitsiApi) { jitsiApi.dispose(); jitsiApi = null; }
 }
 
-// VOICE RECORDER CONTROLS
+// SAFE VOICE RECORDER CONTROLS
 async function startAudioRecording() {
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -237,14 +283,16 @@ async function startAudioRecording() {
       const reader = new FileReader();
       reader.onloadend = async () => {
          selectedFile = { name: `Voice-${Date.now()}.mp3`, type: 'audio/mp3', data: reader.result };
-         document.getElementById('message-input').value = `🎙️ Voice Note (Ready)`;
+         const input = document.getElementById('message-input');
+         if (input) input.value = `🎙️ Voice Note (Ready)`;
       };
       reader.readAsDataURL(audioBlob);
     };
     
     mediaRecorder.start();
     isRecording = true;
-    document.getElementById('mic-btn').innerText = "🛑";
+    const micBtn = document.getElementById('mic-btn');
+    if (micBtn) micBtn.innerText = "🛑";
   } catch (err) {
     alert("Mic access denied or not supported.");
   }
@@ -254,18 +302,16 @@ function stopAudioRecording() {
   if (mediaRecorder && isRecording) {
     mediaRecorder.stop();
     isRecording = false;
-    document.getElementById('mic-btn').innerText = "🎙️";
+    const micBtn = document.getElementById('mic-btn');
+    if (micBtn) micBtn.innerText = "🎙️";
   }
 }
 
-// Bind mic button actions safely
-document.addEventListener('DOMContentLoaded', () => {
-  const micBtn = document.getElementById('mic-btn');
-  if(micBtn) {
-    micBtn.onclick = () => {
-      if(!isRecording) startAudioRecording();
-      else stopAudioRecording();
-    };
+// Event bindings handled safely after elements exist
+document.addEventListener('click', (e) => {
+  if(e.target && e.target.id === 'mic-btn') {
+    if(!isRecording) startAudioRecording();
+    else stopAudioRecording();
   }
 });
 
@@ -275,13 +321,16 @@ function handleFileSelect(input) {
   const reader = new FileReader();
   reader.onload = function(e) {
     selectedFile = { name: file.name, type: file.type, data: e.target.result };
-    document.getElementById('message-input').value = `📎 ${file.name} (Ready)`;
+    const msgIn = document.getElementById('message-input');
+    if (msgIn) msgIn.value = `📎 ${file.name} (Ready)`;
   };
   reader.readAsDataURL(file);
 }
 
 function renderSingleMessage(msg) {
   const display = document.getElementById('messages-display');
+  if (!display) return;
+  
   const msgSenderId = String(msg.sender._id || msg.sender);
   const currentLoggedUserId = String(userId);
   const type = msgSenderId === currentLoggedUserId ? 'sent' : 'received';
@@ -308,6 +357,7 @@ function renderSingleMessage(msg) {
 
 async function sendMessage() {
   const input = document.getElementById('message-input');
+  if (!input) return;
   let textToSend = input.value.trim();
   if (!textToSend && !selectedFile) return;
 
