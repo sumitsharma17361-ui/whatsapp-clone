@@ -3,16 +3,14 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>WhatsApp Ultra Pro</title>
+  <title>WhatsApp Lite</title>
   <link rel="stylesheet" href="style.css">
   <script src="/socket.io/socket.io.js"></script>
-  <!-- Jitsi Calling Web Script Loading -->
-  <script src="https://8x8.vc/external_api.js"></script>
 </head>
 <body>
   <div id="auth-screen" class="centered-container">
     <div class="card">
-      <h2>WhatsApp Ultra</h2>
+      <h2>WhatsApp Lite</h2>
       <input type="text" id="auth-username" placeholder="Username">
       <input type="password" id="auth-password" placeholder="Password">
       <div class="row" style="display: flex; gap: 10px; width: 100%;">
@@ -25,19 +23,18 @@
   <div id="app-screen" class="app-container hidden">
     <div class="sidebar" id="sidebar">
       <div class="sidebar-header">
-        <div style="display: flex; align-items: center; gap: 10px;">
-          <input type="file" id="avatar-input" style="display:none;" accept="image/*" onchange="uploadProfilePic(this)">
-          <img id="my-avatar" src="https://www.w3schools.com/howto/img_avatar.png" onclick="document.getElementById('avatar-input').click()" style="width: 40px; height: 40px; border-radius: 50%; object-fit: cover; cursor: pointer;">
-          <h3 id="current-user-display">My Profile</h3>
-        </div>
+        <h3 id="current-user-display">My Profile</h3>
         <button onclick="logout()" class="btn-small">Logout</button>
       </div>
+      
       <div class="search-box">
         <input type="text" id="target-username" placeholder="Add friend username...">
         <button onclick="sendFriendRequest()">+</button>
       </div>
+
       <div class="section-title">Pending Requests</div>
       <div id="requests-list" class="list-container"></div>
+
       <div class="section-title">Chats</div>
       <div id="friends-list" class="list-container"></div>
     </div>
@@ -48,49 +45,25 @@
       </div>
       
       <div id="active-chat" class="chat-window hidden">
-        <div class="chat-header" style="display: flex; align-items: center; justify-content: space-between;">
-          <div style="display: flex; align-items: center; gap: 10px;">
-            <button id="back-btn" onclick="toggleSidebar(true)" style="background:transparent; color:#111b21; font-size:22px; padding:5px; border:none;">⬅</button>
-            <img id="active-friend-avatar" src="https://www.w3schools.com/howto/img_avatar.png" style="width: 40px; height: 40px; border-radius: 50%; object-fit: cover;">
-            <div class="header-info">
-              <span id="active-friend-name">Friend Name</span>
-              <span id="active-friend-status" class="status-indicator">Offline</span>
-            </div>
-          </div>
-          <!-- New Standard Call Buttons Trigger -->
-          <div style="display: flex; gap: 18px; margin-right: 15px;">
-            <button onclick="initiateJitsiCall('audio')" style="background:transparent; font-size:22px; border:none; cursor:pointer; padding:0;">📞</button>
-            <button onclick="initiateJitsiCall('video')" style="background:transparent; font-size:22px; border:none; cursor:pointer; padding:0;">🎥</button>
+        <div class="chat-header">
+          <button id="back-btn" onclick="toggleSidebar(true)">⬅</button>
+          <div class="header-info">
+            <span id="active-friend-name">Friend Name</span>
+            <span id="active-friend-status" class="status-indicator">Offline</span>
           </div>
         </div>
-        
         <div id="messages-display" class="messages-container"></div>
         
         <div class="chat-input-area">
           <input type="file" id="file-input" style="display: none;" onchange="handleFileSelect(this)">
           <button class="attach-btn" onclick="document.getElementById('file-input').click()">📎</button>
           <input type="text" id="message-input" placeholder="Type a message...">
-          <button id="mic-btn" style="background:transparent; font-size:22px; border:none; cursor:pointer; padding:0 5px;">🎙️</button>
           <button class="send-btn" onclick="sendMessage()">Send</button>
         </div>
       </div>
     </div>
   </div>
 
-  <!-- Real-time Incoming Call Dialog Box Popup -->
-  <div id="incoming-call-popup" style="display: none; position: fixed; top: 20px; left: 50%; transform: translateX(-50%); background: #111b21; color: white; padding: 15px 25px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.3); z-index: 1000; align-items: center; gap: 20px; border: 1px solid #00a884; width: 90%; max-width: 350px; justify-content: space-between;">
-    <div>
-      <b id="caller-name-display" style="font-size: 15px;">Friend Name</b>
-      <div style="font-size: 12px; color: #8696a0;">Incoming Call...</div>
-    </div>
-    <div style="display: flex; gap: 10px;">
-      <button id="accept-call-btn" style="background: #25d366; padding: 8px 15px; border-radius: 6px;">Join</button>
-      <button onclick="closeCallPopup()" style="background: #ea0038; padding: 8px 15px; border-radius: 6px;">Dismiss</button>
-    </div>
-  </div>
-
-  <!-- Full-Screen Interactive Calling IFrame Box container -->
-  <div id="jitsi-container" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100dvh; background: black; z-index: 9999;"></div>
-
+  <script src="main.js"></script>
 </body>
 </html>
