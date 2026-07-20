@@ -10,12 +10,13 @@ let mediaRecorder;
 let audioChunks = [];
 let isRecording = false;
 
-// WebRTC Calling Engine State - FIXED STUN & HANDSHAKE ROUTING
+// WebRTC Full System Engine State - CANDIDATE FIX INCLUDED
 let localStream;
 let peerConnection;
 let incomingSignalData = null;
 let callType = null;
-const rtcConfig = { iceServers: [{ urls: 'ice:stun.l.google.com:19302' }] }; 
+let callerFriendId = null; // Track who is calling
+const rtcConfig = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] }; 
 
 const headers = () => ({ 'Content-Type': 'application/json', 'Authorization': localStorage.getItem('token') });
 
@@ -111,10 +112,11 @@ function showDashboard() {
 
   socket.on('incomingFriendRequest', () => loadDashboardData());
   
-  // --- FIXED WEBRTC REAL-TIME LISTENERS ---
-  socket.on('incomingCall', async ({ from, signal, type }) => {
+  // --- COMPLETE WEBRTC STATE SYNC FIX LISTENERS ---
+  socket.on('incomingCall', async ({ from, fromId, signal, type }) => {
      incomingSignalData = signal;
      callType = type;
+     callerFriendId = fromId;
      showCallOverlay(from, "Incoming " + type + " call...", true);
   });
 
@@ -125,9 +127,13 @@ function showDashboard() {
      }
   });
 
-  socket.on('callEnded', () => {
-     closeCallUI();
+  socket.on('iceCandidateReceive', async (candidate) => {
+     if (peerConnection) {
+        await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+     }
   });
+
+  socket.on('callEnded', () => { closeCallUI(); });
 
   loadDashboardData();
 }
@@ -172,7 +178,7 @@ async function openChat(friendId, friendName, isOnline, avatar, lastSeen) {
   messages.forEach(renderSingleMessage);
 }
 
-// --- FIXED CALLING OVERLAY LOGIC ---
+// --- CALL OVERLAY LOGIC FRAMEWORK ---
 function showCallOverlay(name, text, isInvite = false) {
   document.getElementById('call-user-name').innerText = name;
   document.getElementById('call-status-text').innerText = text;
@@ -193,7 +199,6 @@ async function startCall(type) {
   showCallOverlay(document.getElementById('active-friend-name').innerText, "Ringing...");
 
   localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: type === 'video' });
-  
   if(type === 'video') {
      document.getElementById('video-grid').style.display = 'block';
      document.getElementById('local-video').srcObject = localStream;
@@ -207,16 +212,17 @@ async function startCall(type) {
      document.getElementById('remote-video').srcObject = e.streams[0];
   };
 
-  // Fixed Offer Generation Pipeline
+  // Fixed ICE Candidate Gathering Forwarder Channel
+  peerConnection.onicecandidate = e => {
+     if (e.candidate) {
+        socket.emit('iceCandidateEmit', { to: activeFriendId, candidate: e.candidate });
+     }
+  };
+
   const offer = await peerConnection.createOffer();
   await peerConnection.setLocalDescription(offer);
 
-  socket.emit('callUser', {
-     to: activeFriendId,
-     from: username,
-     signalData: offer,
-     type: type
-  });
+  socket.emit('callUser', { to: activeFriendId, from: username, signalData: offer, type: type });
 }
 
 async function answerIncomingCall() {
@@ -238,29 +244,33 @@ async function answerIncomingCall() {
      document.getElementById('remote-video').srcObject = e.streams[0];
   };
 
+  peerConnection.onicecandidate = e => {
+     if (e.candidate) {
+        socket.emit('iceCandidateEmit', { to: callerFriendId || activeFriendId, candidate: e.candidate });
+     }
+  };
+
   await peerConnection.setRemoteDescription(new RTCSessionDescription(incomingSignalData));
   const answer = await peerConnection.createAnswer();
   await peerConnection.setLocalDescription(answer);
 
-  socket.emit('answerCall', { to: activeFriendId, signal: answer });
+  socket.emit('answerCall', { to: callerFriendId || activeFriendId, signal: answer });
 }
 
 function endCall() {
-  socket.emit('endCallEmit', { to: activeFriendId });
+  socket.emit('endCallEmit', { to: activeFriendId || callerFriendId });
   closeCallUI();
 }
 
 function closeCallUI() {
-  if(localStream) {
-     localStream.getTracks().forEach(track => track.stop());
-  }
-  if(peerConnection) {
-     peerConnection.close();
-  }
+  if(localStream) localStream.getTracks().forEach(track => track.stop());
+  if(peerConnection) peerConnection.close();
   document.getElementById('call-overlay').style.display = 'none';
   document.getElementById('video-grid').style.display = 'none';
   document.getElementById('remote-video').srcObject = null;
   document.getElementById('local-video').srcObject = null;
+  incomingSignalData = null;
+  callerFriendId = null;
 }
 
 // --- VOICE RECORDER ENGINE ---
@@ -284,9 +294,7 @@ function setupMic() {
       };
       mediaRecorder.start();
       isRecording = true; micBtn.innerText = "🛑";
-    } else {
-      mediaRecorder.stop(); isRecording = false; micBtn.innerText = "🎙️";
-    }
+    } else { mediaRecorder.stop(); isRecording = false; micBtn.innerText = "🎙️"; }
   };
 }
 
