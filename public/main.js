@@ -10,13 +10,8 @@ let mediaRecorder;
 let audioChunks = [];
 let isRecording = false;
 
-// WebRTC Full System Engine State - CANDIDATE FIX INCLUDED
-let localStream;
-let peerConnection;
-let incomingSignalData = null;
-let callType = null;
-let callerFriendId = null; // Track who is calling
-const rtcConfig = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] }; 
+// Jitsi Active Calling Object
+let jitsiApi = null;
 
 const headers = () => ({ 'Content-Type': 'application/json', 'Authorization': localStorage.getItem('token') });
 
@@ -112,28 +107,20 @@ function showDashboard() {
 
   socket.on('incomingFriendRequest', () => loadDashboardData());
   
-  // --- COMPLETE WEBRTC STATE SYNC FIX LISTENERS ---
-  socket.on('incomingCall', async ({ from, fromId, signal, type }) => {
-     incomingSignalData = signal;
-     callType = type;
-     callerFriendId = fromId;
-     showCallOverlay(from, "Incoming " + type + " call...", true);
+  // --- FOOLPROOF REAL-TIME INCOMING CALL TRIGGER LISTENER ---
+  socket.on('incomingCall', ({ from, signal }) => {
+      document.getElementById('caller-name-display').innerText = from;
+      const popup = document.getElementById('incoming-call-popup');
+      popup.style.display = 'flex';
+      
+      // Bind Join click trigger smoothly
+      document.getElementById('accept-call-btn').onclick = () => {
+         popup.style.display = 'none';
+         launchJitsiFrame(signal);
+      };
   });
 
-  socket.on('callAccepted', async (signal) => {
-     document.getElementById('call-status-text').innerText = "Connected";
-     if (peerConnection) {
-        await peerConnection.setRemoteDescription(new RTCSessionDescription(signal));
-     }
-  });
-
-  socket.on('iceCandidateReceive', async (candidate) => {
-     if (peerConnection) {
-        await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
-     }
-  });
-
-  socket.on('callEnded', () => { closeCallUI(); });
+  socket.on('callEnded', () => { closeActiveCall(); });
 
   loadDashboardData();
 }
@@ -178,99 +165,65 @@ async function openChat(friendId, friendName, isOnline, avatar, lastSeen) {
   messages.forEach(renderSingleMessage);
 }
 
-// --- CALL OVERLAY LOGIC FRAMEWORK ---
-function showCallOverlay(name, text, isInvite = false) {
-  document.getElementById('call-user-name').innerText = name;
-  document.getElementById('call-status-text').innerText = text;
-  document.getElementById('call-overlay').style.display = 'flex';
-  
-  if(isInvite) {
-     document.getElementById('call-invite-ui').style.display = 'flex';
-     document.getElementById('call-active-ui').style.display = 'none';
-  } else {
-     document.getElementById('call-invite-ui').style.display = 'none';
-     document.getElementById('call-active-ui').style.display = 'flex';
-  }
-}
-
-async function startCall(type) {
+// --- JITSI API ENGINE WORKFLOW ---
+function initiateJitsiCall(type) {
   if(!activeFriendId) return;
-  callType = type;
-  showCallOverlay(document.getElementById('active-friend-name').innerText, "Ringing...");
+  // Unique secure session token generation
+  const secureRoomId = "WhatsAppLiteCall-" + Math.random().toString(36).substring(2, 12);
+  
+  // Instant notification socket trigger to friend
+  socket.emit('callUser', {
+     to: activeFriendId,
+     from: username,
+     signalData: secureRoomId, 
+     type: type
+  });
 
-  localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: type === 'video' });
-  if(type === 'video') {
-     document.getElementById('video-grid').style.display = 'block';
-     document.getElementById('local-video').srcObject = localStream;
-  }
+  launchJitsiFrame(secureRoomId, type === 'audio');
+}
 
-  peerConnection = new RTCPeerConnection(rtcConfig);
-  localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
+function launchJitsiFrame(roomName, audioOnly = false) {
+  const container = document.getElementById('jitsi-container');
+  container.innerHTML = ""; 
+  container.style.display = 'block';
 
-  peerConnection.ontrack = e => {
-     document.getElementById('video-grid').style.display = 'block';
-     document.getElementById('remote-video').srcObject = e.streams[0];
+  const domain = "8x8.vc"; // High speed decentralized server pipeline
+  const options = {
+      roomName: "vpaas-magic-cookie-408fb8eb4ad14f9d85d7b5145b95ea45/" + roomName,
+      width: "100%",
+      height: "100%",
+      parentNode: container,
+      userInfo: { displayName: username },
+      configOverwrite: {
+         startAudioOnly: audioOnly,
+         prejoinPageEnabled: false, // Extra options bypass karke direct link join
+         toolbarButtons: ['microphone', 'camera', 'hangup', 'tileview', 'toggle-camera']
+      }
   };
-
-  // Fixed ICE Candidate Gathering Forwarder Channel
-  peerConnection.onicecandidate = e => {
-     if (e.candidate) {
-        socket.emit('iceCandidateEmit', { to: activeFriendId, candidate: e.candidate });
+  
+  jitsiApi = new JitsiMeetExternalAPI(domain, options);
+  
+  // Red hangup cancel button listener mapping
+  jitsiApi.addEventListeners({
+     videoConferenceLeft: function() {
+        endJitsiCallSession();
      }
-  };
-
-  const offer = await peerConnection.createOffer();
-  await peerConnection.setLocalDescription(offer);
-
-  socket.emit('callUser', { to: activeFriendId, from: username, signalData: offer, type: type });
+  });
 }
 
-async function answerIncomingCall() {
-  document.getElementById('call-invite-ui').style.display = 'none';
-  document.getElementById('call-active-ui').style.display = 'flex';
-  document.getElementById('call-status-text').innerText = "Connected";
-
-  localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: callType === 'video' });
-  if(callType === 'video') {
-     document.getElementById('video-grid').style.display = 'block';
-     document.getElementById('local-video').srcObject = localStream;
-  }
-
-  peerConnection = new RTCPeerConnection(rtcConfig);
-  localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
-
-  peerConnection.ontrack = e => {
-     document.getElementById('video-grid').style.display = 'block';
-     document.getElementById('remote-video').srcObject = e.streams[0];
-  };
-
-  peerConnection.onicecandidate = e => {
-     if (e.candidate) {
-        socket.emit('iceCandidateEmit', { to: callerFriendId || activeFriendId, candidate: e.candidate });
-     }
-  };
-
-  await peerConnection.setRemoteDescription(new RTCSessionDescription(incomingSignalData));
-  const answer = await peerConnection.createAnswer();
-  await peerConnection.setLocalDescription(answer);
-
-  socket.emit('answerCall', { to: callerFriendId || activeFriendId, signal: answer });
+function closeCallPopup() {
+  document.getElementById('incoming-call-popup').style.display = 'none';
 }
 
-function endCall() {
-  socket.emit('endCallEmit', { to: activeFriendId || callerFriendId });
-  closeCallUI();
+function endJitsiCallSession() {
+  if(activeFriendId) socket.emit('endCallEmit', { to: activeFriendId });
+  closeActiveCall();
 }
 
-function closeCallUI() {
-  if(localStream) localStream.getTracks().forEach(track => track.stop());
-  if(peerConnection) peerConnection.close();
-  document.getElementById('call-overlay').style.display = 'none';
-  document.getElementById('video-grid').style.display = 'none';
-  document.getElementById('remote-video').srcObject = null;
-  document.getElementById('local-video').srcObject = null;
-  incomingSignalData = null;
-  callerFriendId = null;
+function closeActiveCall() {
+  document.getElementById('jitsi-container').style.display = 'none';
+  document.getElementById('jitsi-container').innerHTML = "";
+  if(jitsiApi) { jitsiApi.dispose(); jitsiApi = null; }
 }
 
 // --- VOICE RECORDER ENGINE ---
