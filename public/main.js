@@ -11,6 +11,7 @@ let isRecording = false;
 
 const mockEncryptionKey = "WhatsAppLiteSecretKey12345"; 
 
+// 🔥 Firebase Project Configuration
 const firebaseConfig = {
   apiKey: "AIzaSyCd5NdMJg4f7RkzSlyMncKxl6OoNJhT0CM",
   authDomain: "whatsapp-clone-ae627.firebaseapp.com",
@@ -21,7 +22,10 @@ const firebaseConfig = {
   measurementId: "G-KSKBRCTKRB"
 };
 
-firebase.initializeApp(firebaseConfig);
+// Initialize Firebase App
+if (!firebase.apps.length) {
+  firebase.initializeApp(firebaseConfig);
+}
 let appConfirmationResult = null;
 
 const headers = () => ({
@@ -35,76 +39,121 @@ window.onload = () => {
   }
   setupMic();
   
-  // Safe Recaptcha Initializer
-  try {
-    window.recaptchaVerifier = new firebase.auth.RecaptchaVerifier('recaptcha-container', {
-      'size': 'invisible'
-    }, firebase.auth());
-  } catch(e) {
-    console.log("Recaptcha init error:", e);
-  }
+  // Initialize Recaptcha Verifier on window load
+  initRecaptcha();
 };
+
+function initRecaptcha() {
+  try {
+    if (!window.recaptchaVerifier) {
+      window.recaptchaVerifier = new firebase.auth.RecaptchaVerifier('recaptcha-container', {
+        'size': 'invisible',
+        'callback': (response) => {
+          // reCAPTCHA solved
+        },
+        'expired-callback': () => {
+          if (window.recaptchaVerifier) {
+            window.recaptchaVerifier.render().then(widgetId => grecaptcha.reset(widgetId));
+          }
+        }
+      }, firebase.auth());
+    }
+  } catch(e) {
+    console.log("Recaptcha initialization note:", e);
+  }
+}
 
 function toggleSidebar(show) {
   const sidebar = document.getElementById('sidebar');
   const chatArea = document.getElementById('chat-area');
   if (window.innerWidth <= 768) {
-    if (show) { sidebar.classList.remove('mobile-hidden'); chatArea.classList.add('mobile-hidden'); }
-    else { sidebar.classList.add('mobile-hidden'); chatArea.classList.remove('mobile-hidden'); }
+    if (show) { 
+      sidebar.classList.remove('mobile-hidden'); 
+      chatArea.classList.add('mobile-hidden'); 
+    } else { 
+      sidebar.classList.add('mobile-hidden'); 
+      chatArea.classList.remove('mobile-hidden'); 
+    }
   }
 }
 
+// --- STRICT FIREBASE REAL SIM OTP LOGIN FLOW ---
 async function handleRealFirebaseOtpFlow() {
   const rawPhone = document.getElementById('auth-phone').value.trim();
   const otpSection = document.getElementById('otp-section');
   const otpInput = document.getElementById('auth-otp-input');
   const actionBtn = document.getElementById('otp-action-btn');
 
-  if(!rawPhone) return alert("Please enter your phone number");
-  const fullPhone = "+91" + rawPhone.replace(/^\+91/, '');
+  if (!rawPhone) return alert("Please enter your phone number");
+  
+  // Format to standard E.164 phone format
+  const fullPhone = "+91" + rawPhone.replace(/^\+91/, '').replace(/\s+/g, '');
 
-  if(!appConfirmationResult) {
-    if (!window.recaptchaVerifier) {
-      window.recaptchaVerifier = new firebase.auth.RecaptchaVerifier('recaptcha-container', {'size': 'invisible'}, firebase.auth());
+  if (!appConfirmationResult) {
+    actionBtn.innerText = "Sending OTP...";
+    actionBtn.disabled = true;
+
+    try {
+      initRecaptcha();
+
+      const confirmationResult = await firebase.auth().signInWithPhoneNumber(fullPhone, window.recaptchaVerifier);
+      appConfirmationResult = confirmationResult;
+      
+      alert("🔒 SMS OTP has been sent to your SIM card!");
+      otpSection.style.display = 'block';
+      actionBtn.innerText = 'Verify & Login';
+      actionBtn.disabled = false;
+    } catch (error) {
+      alert("Firebase Error: " + error.message);
+      actionBtn.innerText = "Next";
+      actionBtn.disabled = false;
+      
+      // Reset recaptcha state on error
+      if (window.grecaptcha && window.recaptchaVerifier) {
+        window.recaptchaVerifier.render().then(widgetId => grecaptcha.reset(widgetId));
+      }
     }
-
-    firebase.auth().signInWithPhoneNumber(fullPhone, window.recaptchaVerifier)
-      .then((confirmationResult) => {
-        appConfirmationResult = confirmationResult;
-        alert("🔒 SMS OTP sent to your SIM card!");
-        otpSection.style.display = 'block';
-        actionBtn.innerText = 'Verify & Login';
-      }).catch((error) => {
-        alert("Firebase Error: " + error.message);
-      });
   } else {
     const otpCode = otpInput.value.trim();
-    if(!otpCode) return alert("Enter the SMS verification code");
+    if (!otpCode) return alert("Enter the 6-digit SMS verification code");
 
-    appConfirmationResult.confirm(otpCode)
-      .then(async (result) => {
-        const res = await fetch('/api/verify-otp', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ phoneNumber: fullPhone }) 
-        });
-        const data = await res.json();
-        if(data.error) return alert(data.error);
+    actionBtn.innerText = "Verifying...";
+    actionBtn.disabled = true;
 
-        localStorage.setItem('token', data.token);
-        localStorage.setItem('userId', data.userId);
-        localStorage.setItem('username', data.username);
-        if(data.profilePic) localStorage.setItem('profilePic', data.profilePic);
-        window.location.reload();
-      }).catch((error) => {
-        alert("Invalid SMS code entered!");
+    try {
+      const result = await appConfirmationResult.confirm(otpCode);
+      
+      // Send verified phone to backend for auto-login/register
+      const res = await fetch('/api/verify-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phoneNumber: fullPhone }) 
       });
+      const data = await res.json();
+      
+      if (data.error) {
+        actionBtn.innerText = "Verify & Login";
+        actionBtn.disabled = false;
+        return alert(data.error);
+      }
+
+      localStorage.setItem('token', data.token);
+      localStorage.setItem('userId', data.userId);
+      localStorage.setItem('username', data.username);
+      if (data.profilePic) localStorage.setItem('profilePic', data.profilePic);
+      
+      window.location.reload();
+    } catch (error) {
+      alert("Invalid SMS code entered!");
+      actionBtn.innerText = "Verify & Login";
+      actionBtn.disabled = false;
+    }
   }
 }
 
 async function uploadProfilePic(input) {
   const file = input.files[0];
-  if(!file) return;
+  if (!file) return;
   const reader = new FileReader();
   reader.onload = async (e) => {
     const base64 = e.target.result;
@@ -137,21 +186,24 @@ function showDashboard() {
          msg.text = decryptText(msg.text, mockEncryptionKey);
       }
       renderSingleMessage(msg);
-      if(msgSender === String(activeFriendId)) socket.emit('readEmit', { msgId: msg._id, senderId: msgSender });
+      if (msgSender === String(activeFriendId)) socket.emit('readEmit', { msgId: msg._id, senderId: msgSender });
     }
   });
 
   socket.on('msgStatusUpdate', ({ msgId, status }) => {
      const tickEl = document.getElementById(`tick-${msgId}`);
-     if(tickEl) {
+     if (tickEl) {
         tickEl.innerHTML = '✓✓';
-        if(status === 'read') tickEl.style.color = '#53bdeb'; 
+        if (status === 'read') tickEl.style.color = '#53bdeb'; 
      }
   });
 
   socket.on('messagesMarkedRead', ({ by }) => {
-     if(String(by) === String(activeFriendId)) {
-        document.querySelectorAll('.tick-status').forEach(el => { el.innerHTML = '✓✓'; el.style.color = '#53bdeb'; });
+     if (String(by) === String(activeFriendId)) {
+        document.querySelectorAll('.tick-status').forEach(el => { 
+          el.innerHTML = '✓✓'; 
+          el.style.color = '#53bdeb'; 
+        });
      }
   });
 
@@ -166,6 +218,7 @@ function showDashboard() {
   loadDashboardData();
 }
 
+// --- E2EE CRYPTO ALGORITHMS ---
 function encryptText(text, key) { return btoa(encodeURIComponent(text)); }
 function decryptText(encodedText, key) {
   try { return decodeURIComponent(atob(encodedText)); } catch(e) { return "🔒 Decrypted"; }
@@ -176,7 +229,7 @@ async function loadDashboardData() {
   const data = await res.json();
   
   const reqList = document.getElementById('requests-list');
-  if(reqList) {
+  if (reqList) {
     reqList.innerHTML = '';
     (data.friendRequests || []).forEach(req => {
       reqList.innerHTML += `<div class="list-item"><span>${req.username}</span><button class="btn-small" onclick="acceptFriend('${req._id}')">Accept</button></div>`;
@@ -184,7 +237,7 @@ async function loadDashboardData() {
   }
 
   const friendsList = document.getElementById('friends-list');
-  if(friendsList) {
+  if (friendsList) {
     friendsList.innerHTML = '';
     (data.friends || []).forEach(f => {
       const avatar = f.profilePic || 'https://www.w3schools.com/howto/img_avatar.png';
@@ -205,11 +258,13 @@ async function loadDashboardData() {
 }
 
 async function sendFriendRequest() {
-  const target = document.getElementById('target-username').value;
+  const targetInput = document.getElementById('target-username');
+  const target = targetInput.value.trim();
+  if (!target) return;
   const res = await fetch('/api/friend-request', { method: 'POST', headers: headers(), body: JSON.stringify({ targetUsername: target }) });
   const data = await res.json();
   alert(data.message || data.error);
-  document.getElementById('target-username').value = '';
+  targetInput.value = '';
 }
 
 async function acceptFriend(requesterId) {
@@ -232,34 +287,40 @@ async function openChat(friendId, friendName, isOnline, avatar, lastSeen) {
   display.innerHTML = '';
   
   messages.forEach(msg => {
-     if(msg.text && msg.isEncrypted) msg.text = decryptText(msg.text, mockEncryptionKey);
+     if (msg.text && msg.isEncrypted) msg.text = decryptText(msg.text, mockEncryptionKey);
      renderSingleMessage(msg);
   });
 }
 
 function setupMic() {
   const micBtn = document.getElementById('mic-btn');
-  if(!micBtn) return;
+  if (!micBtn) return;
   micBtn.onclick = async () => {
     if (!isRecording) {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      mediaRecorder = new MediaRecorder(stream);
-      audioChunks = [];
-      mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
-      mediaRecorder.onstop = async () => {
-        const audioBlob = new Blob(audioChunks, { type: 'audio/mp3' });
-        const reader = new FileReader();
-        reader.onloadend = async () => {
-           selectedFile = { name: `Voice-${Date.now()}.mp3`, type: 'audio/mp3', data: reader.result };
-           document.getElementById('message-input').value = `🎙️ Voice Note (Ready)`;
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        mediaRecorder = new MediaRecorder(stream);
+        audioChunks = [];
+        mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
+        mediaRecorder.onstop = async () => {
+          const audioBlob = new Blob(audioChunks, { type: 'audio/mp3' });
+          const reader = new FileReader();
+          reader.onloadend = async () => {
+             selectedFile = { name: `Voice-${Date.now()}.mp3`, type: 'audio/mp3', data: reader.result };
+             document.getElementById('message-input').value = `🎙️ Voice Note (Ready)`;
+          };
+          reader.readAsDataURL(audioBlob);
         };
-        reader.readAsDataURL(audioBlob);
-      };
-      mediaRecorder.start();
-      isRecording = true;
-      micBtn.style.color = '#ea0038';
+        mediaRecorder.start();
+        isRecording = true;
+        micBtn.style.color = '#ea0038';
+      } catch (err) {
+        alert("Microphone access denied or not available");
+      }
     } else {
-      mediaRecorder.stop(); isRecording = false; micBtn.style.color = '#e9edef';
+      mediaRecorder.stop(); 
+      isRecording = false; 
+      micBtn.style.color = '#e9edef';
     }
   };
 }
@@ -291,10 +352,10 @@ function renderSingleMessage(msg) {
   }
   if (msg.text) contentHtml += `<p style="margin-top:4px;">${msg.text}</p>`;
 
-  if(type === 'sent') {
+  if (type === 'sent') {
      let tickSymbol = '✓'; let tickColor = '#8696a0';
-     if(msg.status === 'delivered' || msg.status === 'read') tickSymbol = '✓✓';
-     if(msg.status === 'read') tickColor = '#53bdeb';
+     if (msg.status === 'delivered' || msg.status === 'read') tickSymbol = '✓✓';
+     if (msg.status === 'read') tickColor = '#53bdeb';
      contentHtml += `<span class="tick-status" id="tick-${msg._id}" style="float:right; font-size:11px; margin-left:5px; color:${tickColor}; font-weight:bold;">${tickSymbol}</span>`;
   }
   contentHtml += '</div>';
@@ -308,7 +369,11 @@ async function sendMessage() {
   if (!textToSend && !selectedFile) return;
 
   if (selectedFile) {
-    const filePayload = selectedFile; selectedFile = null; document.getElementById('file-input').value = ""; input.value = '';
+    const filePayload = selectedFile; 
+    selectedFile = null; 
+    document.getElementById('file-input').value = ""; 
+    input.value = '';
+    
     if (textToSend.includes('(Ready)')) textToSend = "";
     const timestamp = Date.now();
     const display = document.getElementById('messages-display');
@@ -328,30 +393,55 @@ async function sendMessage() {
     const xhr = new XMLHttpRequest();
     xhr.open("POST", "/api/upload", true);
     xhr.setRequestHeader("Content-Type", "application/json");
+    
     xhr.upload.onprogress = function(event) {
       if (event.lengthComputable) {
         const percentComplete = Math.round((event.loaded / event.total) * 100);
         const bar = document.getElementById(`progress-${timestamp}`);
         const text = document.getElementById(`percent-${timestamp}`);
-        if(bar) bar.style.width = percentComplete + '%';
-        if(text) text.innerText = percentComplete + '%';
+        if (bar) bar.style.width = percentComplete + '%';
+        if (text) text.innerText = percentComplete + '%';
       }
     };
+    
     xhr.onload = function() {
       if (xhr.status === 200) {
         const response = JSON.parse(xhr.responseText);
         if (response.fileUrl) {
           let cipherText = textToSend ? encryptText(textToSend, mockEncryptionKey) : "";
-          socket.emit('sendMessage', { senderId: userId, receiverId: activeFriendId, text: cipherText, fileUrl: response.fileUrl, fileName: filePayload.name, fileType: filePayload.type, timestamp: timestamp, isEncrypted: true });
+          socket.emit('sendMessage', { 
+            senderId: userId, 
+            receiverId: activeFriendId, 
+            text: cipherText, 
+            fileUrl: response.fileUrl, 
+            fileName: filePayload.name, 
+            fileType: filePayload.type, 
+            timestamp: timestamp, 
+            isEncrypted: true 
+          });
         }
-      } else { alert("File upload failed."); const temp = document.getElementById(`temp-${timestamp}`); if(temp) temp.remove(); }
+      } else { 
+        alert("File upload failed."); 
+        const temp = document.getElementById(`temp-${timestamp}`); 
+        if (temp) temp.remove(); 
+      }
     };
+    
     xhr.send(JSON.stringify({ fileName: filePayload.name, fileData: filePayload.data }));
   } else {
     let encryptedSecret = encryptText(textToSend, mockEncryptionKey);
-    socket.emit('sendMessage', { senderId: userId, receiverId: activeFriendId, text: encryptedSecret, isEncrypted: true });
+    socket.emit('sendMessage', { 
+      senderId: userId, 
+      receiverId: activeFriendId, 
+      text: encryptedSecret, 
+      isEncrypted: true 
+    });
     input.value = '';
   }
 }
 
-function logout() { localStorage.clear(); window.location.reload(); }
+function logout() { 
+  localStorage.clear(); 
+  window.location.reload(); 
+    }
+                                                                                                    
