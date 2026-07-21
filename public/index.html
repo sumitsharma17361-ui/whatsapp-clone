@@ -3,44 +3,53 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>WhatsApp Lite</title>
+  <title>WhatsApp Ultra</title>
   <link rel="stylesheet" href="style.css">
   <script src="/socket.io/socket.io.js"></script>
 </head>
 <body>
+
+  <!-- LOGIN / REGISTER SCREEN (Image 4 Lookalike) -->
   <div id="auth-screen" class="centered-container">
     <div class="card">
-      <h2>WhatsApp Lite</h2>
+      <h2 class="auth-title">WhatsApp Ultra</h2>
       <input type="text" id="auth-username" placeholder="Username">
       <input type="password" id="auth-password" placeholder="Password">
-      <div class="row" style="display: flex; gap: 10px; width: 100%; margin-top:10px;">
-        <button onclick="authAction('login')" style="flex: 1;">Login</button>
+      <div class="row" style="display: flex; gap: 10px; width: 100%; margin-top:15px;">
+        <button onclick="authAction('login')" class="btn-primary" style="flex: 1;">Login</button>
         <button onclick="authAction('register')" class="btn-secondary" style="flex: 1;">Register</button>
       </div>
     </div>
   </div>
 
+  <!-- MAIN DASHBOARD APP SCREEN (Image 3 Lookalike) -->
   <div id="app-screen" class="app-container hidden">
+    <!-- LEFT SIDEBAR -->
     <div class="sidebar" id="sidebar">
       <div class="sidebar-header">
-        <div style="display: flex; align-items: center; gap: 10px;">
+        <div class="profile-info">
           <input type="file" id="avatar-input" style="display:none;" accept="image/*" onchange="uploadProfilePic(this)">
-          <img id="my-avatar" src="https://www.w3schools.com/howto/img_avatar.png" onclick="document.getElementById('avatar-input').click()" style="width: 40px; height: 40px; border-radius: 50%; object-fit: cover; cursor: pointer;">
-          <h3 id="current-user-display">My Profile</h3>
+          <img id="my-avatar" src="https://www.w3schools.com/howto/img_avatar.png" onclick="document.getElementById('avatar-input').click()" title="Click to change profile picture" class="avatar-img">
+          <h3 id="current-user-display">SUMIT</h3>
         </div>
-        <button onclick="logout()" class="btn-small">Logout</button>
+        <button onclick="logout()" class="btn-logout">Logout</button>
       </div>
       
       <div class="search-box">
         <input type="text" id="target-username" placeholder="Add friend username...">
-        <button onclick="sendFriendRequest()">+</button>
+        <button onclick="sendFriendRequest()" class="btn-add">+</button>
       </div>
-      <div class="section-title">Pending Requests</div>
-      <div id="requests-list" class="list-container"></div>
-      <div class="section-title">Chats</div>
-      <div id="friends-list" class="list-container"></div>
+
+      <div class="sidebar-scroll">
+        <div class="section-title">PENDING REQUESTS</div>
+        <div id="requests-list" class="list-container"></div>
+
+        <div class="section-title">CHATS</div>
+        <div id="friends-list" class="list-container"></div>
+      </div>
     </div>
 
+    <!-- RIGHT CHAT AREA WITH WALLPAPER -->
     <div class="chat-area mobile-hidden" id="chat-area">
       <div id="chat-placeholder" class="centered-container">
         <p>Select a friend to start chatting</p>
@@ -48,21 +57,22 @@
       
       <div id="active-chat" class="chat-window hidden">
         <div class="chat-header">
-          <button id="back-btn" onclick="toggleSidebar(true)" style="background:transparent; color:#111b21; font-size:22px; padding:5px 10px; border:none; font-weight:bold;">⬅</button>
-          <img id="active-friend-avatar" src="https://www.w3schools.com/howto/img_avatar.png" style="width: 40px; height: 40px; border-radius: 50%; object-fit: cover;">
+          <button id="back-btn" onclick="toggleSidebar(true)" class="btn-back">⬅</button>
+          <img id="active-friend-avatar" src="https://www.w3schools.com/howto/img_avatar.png" class="avatar-img-chat">
           <div class="header-info">
             <span id="active-friend-name">Friend Name</span>
             <span id="active-friend-status" class="status-indicator">Offline</span>
           </div>
         </div>
         
+        <!-- MESSAGES BOX WITH LIGHT WHATSAPP WALLPAPER BACKGROUND -->
         <div id="messages-display" class="messages-container"></div>
         
         <div class="chat-input-area">
           <input type="file" id="file-input" style="display: none;" onchange="handleFileSelect(this)">
           <button class="attach-btn" onclick="document.getElementById('file-input').click()">📎</button>
           <input type="text" id="message-input" placeholder="Type a message...">
-          <button id="mic-btn" style="background:transparent; font-size:22px; border:none; cursor:pointer; padding:0 5px;">🎙️</button>
+          <button id="mic-btn" class="mic-btn">🎙️</button>
           <button class="send-btn" onclick="sendMessage()">Send</button>
         </div>
       </div>
