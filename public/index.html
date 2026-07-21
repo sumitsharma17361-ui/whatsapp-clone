@@ -3,95 +3,138 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>WhatsApp Lite</title>
+  <title>WhatsApp</title>
   <link rel="stylesheet" href="style.css">
   <script src="/socket.io/socket.io.js"></script>
 
-  <!-- Firebase App & Auth Appended Legacy SDK Libraries -->
+  <!-- Firebase SDKs for Real SIM Phone Auth -->
   <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-auth-compat.js"></script>
 </head>
 <body>
-  <div id="auth-screen" class="centered-container">
-    <div class="card">
-      <h2>WhatsApp Lite</h2>
-      
-      <!-- Tab Switchers -->
-      <div style="display:flex; justify-content:center; gap:15px; margin-bottom:15px; font-size:14px; font-weight:bold; cursor:pointer;">
-        <span id="tab-pass" onclick="switchAuthMode('password')" style="color:#00a884; border-bottom:2px solid #00a884; padding-bottom:3px;">Password Login</span>
-        <span id="tab-otp" onclick="switchAuthMode('otp')" style="color:#8696a0;">Phone OTP Login</span>
-      </div>
 
-      <!-- Password Login / Register Fields -->
-      <div id="password-auth-box">
-        <input type="text" id="auth-username" placeholder="Username">
-        <input type="text" id="auth-phone-reg" placeholder="Mobile Number (e.g. +919876543210)">
-        <input type="password" id="auth-password" placeholder="Password">
-        <div class="row" style="display: flex; gap: 10px; width: 100%; margin-top:10px;">
-          <button onclick="authAction('login')" style="flex: 1;">Login</button>
-          <button onclick="authAction('register')" class="btn-secondary" style="flex: 1;" id="reg-btn">Register</button>
+  <!-- ================= AUTHENTICATION SCREEN (Image 1 Lookalike) ================= -->
+  <div id="auth-screen" class="wa-auth-container">
+    <div class="wa-auth-box">
+      <h2>Enter your phone number</h2>
+      <p class="wa-auth-sub">WhatsApp will need to verify your phone number. Carrier charges may apply.</p>
+      
+      <div class="wa-phone-input-group">
+        <div class="wa-country-select">
+          <span>India</span>
+          <span>▼</span>
+        </div>
+        <div class="wa-phone-row">
+          <input type="text" value="+91" readonly class="wa-country-code">
+          <input type="tel" id="auth-phone" placeholder="Phone number" autocomplete="tel">
         </div>
       </div>
 
-      <!-- Phone OTP Login Fields -->
-      <div id="otp-auth-box" style="display: none;">
-        <input type="tel" id="auth-phone" placeholder="Enter Mobile Number with Country Code (e.g. +9198765xxx)">
-        <input type="text" id="auth-otp-input" placeholder="Enter Real SMS OTP" style="display:none; margin-top:10px;">
-        <button onclick="handleRealFirebaseOtpFlow()" id="otp-action-btn" style="width:100%; margin-top:10px;">Send SMS OTP</button>
+      <!-- OTP Verification Input Box (Hidden initially) -->
+      <div id="otp-section" style="display:none; margin-top:20px;">
+        <input type="text" id="auth-otp-input" placeholder="Enter 6-digit SMS code" style="width:100%; padding:12px; font-size:16px; border:1px solid #00a884; border-radius:6px; outline:none;">
       </div>
 
-      <!-- Hidden Placeholder Element Required for Firebase Invisible reCAPTCHA Verification -->
-      <div id="recaptcha-container" style="margin-top: 10px;"></div>
+      <!-- Hidden Recaptcha container -->
+      <div id="recaptcha-container"></div>
+
+      <div style="margin-top: 40px; text-align: center;">
+        <button id="otp-action-btn" onclick="handleRealFirebaseOtpFlow()" class="wa-next-btn">Next</button>
+      </div>
     </div>
   </div>
 
-  <div id="app-screen" class="app-container hidden">
-    <div class="sidebar" id="sidebar">
-      <div class="sidebar-header">
-        <div style="display: flex; align-items: center; gap: 10px;">
+  <!-- ================= MAIN APP SCREEN (Image 2 & 3 Lookalike) ================= -->
+  <div id="app-screen" class="wa-main-layout hidden">
+    
+    <!-- SIDEBAR CHATS LIST (Image 2 Lookalike) -->
+    <div class="wa-sidebar" id="sidebar">
+      <div class="wa-header">
+        <h1 class="wa-logo">WhatsApp</h1>
+        <div class="wa-header-icons">
+          <span>₹</span>
+          <span onclick="document.getElementById('avatar-input').click()" style="cursor:pointer;">📷</span>
           <input type="file" id="avatar-input" style="display:none;" accept="image/*" onchange="uploadProfilePic(this)">
-          <img id="my-avatar" src="https://www.w3schools.com/howto/img_avatar.png" onclick="document.getElementById('avatar-input').click()" style="width: 40px; height: 40px; border-radius: 50%; object-fit: cover; cursor: pointer;">
-          <h3 id="current-user-display">My Profile</h3>
+          <span onclick="logout()" title="Logout">⋮</span>
         </div>
-        <button onclick="logout()" class="btn-small">Logout</button>
       </div>
-      
-      <div class="search-box">
-        <input type="text" id="target-username" placeholder="Add friend username...">
-        <button onclick="sendFriendRequest()">+</button>
+
+      <div class="wa-search-bar">
+        <input type="text" id="target-username" placeholder="Ask Meta AI or Search">
+        <button onclick="sendFriendRequest()" class="wa-add-friend-btn">+</button>
       </div>
-      <div class="section-title">Pending Requests</div>
-      <div id="requests-list" class="list-container"></div>
-      <div class="section-title">Chats</div>
-      <div id="friends-list" class="list-container"></div>
+
+      <div class="wa-list-scroll">
+        <div class="wa-section-label">PENDING REQUESTS</div>
+        <div id="requests-list"></div>
+
+        <div class="wa-section-label" style="margin-top:10px;">CHATS</div>
+        <div id="friends-list"></div>
+      </div>
+
+      <!-- Bottom WhatsApp Navigation Bar (Image 2 Bottom Tabs) -->
+      <div class="wa-bottom-nav">
+        <div class="wa-nav-item active">
+          <span>💬</span>
+          <span class="wa-badge-count" id="chat-badge">3</span>
+          <span>Chats</span>
+        </div>
+        <div class="wa-nav-item">
+          <span>🔄</span>
+          <span>Updates</span>
+        </div>
+        <div class="wa-nav-item">
+          <span>👥</span>
+          <span>Communities</span>
+        </div>
+        <div class="wa-nav-item">
+          <span>📞</span>
+          <span>Calls</span>
+        </div>
+      </div>
     </div>
 
-    <div class="chat-area mobile-hidden" id="chat-area">
-      <div id="chat-placeholder" class="centered-container">
-        <p>Select a friend to start chatting</p>
+    <!-- ACTIVE CHAT WINDOW AREA (Image 3 Lookalike) -->
+    <div class="wa-chat-pane mobile-hidden" id="chat-area">
+      <div id="chat-placeholder" class="wa-empty-chat">
+        <p>Select a chat to start messaging</p>
       </div>
       
-      <div id="active-chat" class="chat-window hidden">
-        <div class="chat-header">
-          <button id="back-btn" onclick="toggleSidebar(true)" style="background:transparent; color:#111b21; font-size:22px; padding:5px 10px; border:none; font-weight:bold;">⬅</button>
-          <img id="active-friend-avatar" src="https://www.w3schools.com/howto/img_avatar.png" style="width: 40px; height: 40px; border-radius: 50%; object-fit: cover;">
-          <div class="header-info">
-            <span id="active-friend-name">Friend Name</span>
-            <span id="active-friend-status" class="status-indicator">Offline</span>
+      <div id="active-chat" class="wa-active-window hidden">
+        <!-- Top Chat Header -->
+        <div class="wa-chat-pane-header">
+          <div style="display: flex; align-items: center; gap: 12px;">
+            <button onclick="toggleSidebar(true)" class="wa-back-arrow">⬅</button>
+            <img id="active-friend-avatar" src="https://www.w3schools.com/howto/img_avatar.png" class="wa-chat-avatar">
+            <div>
+              <span id="active-friend-name" class="wa-chat-title">Friend Name</span>
+              <span id="active-friend-status" class="wa-chat-subtitle">online</span>
+            </div>
+          </div>
+          <div class="wa-chat-header-icons">
+            <span>📹</span>
+            <span>📞</span>
+            <span>⋮</span>
           </div>
         </div>
         
-        <div id="messages-display" class="messages-container"></div>
+        <!-- Messages Display Container with Wallpaper Background -->
+        <div id="messages-display" class="wa-messages-box"></div>
         
-        <div class="chat-input-area">
+        <!-- Bottom Input Area (Image 3 Bottom Toolbar) -->
+        <div class="wa-input-toolbar">
           <input type="file" id="file-input" style="display: none;" onchange="handleFileSelect(this)">
-          <button class="attach-btn" onclick="document.getElementById('file-input').click()">📎</button>
-          <input type="text" id="message-input" placeholder="Type a message...">
-          <button id="mic-btn" style="background:transparent; font-size:22px; border:none; cursor:pointer; padding:0 5px;">🎙️</button>
-          <button class="send-btn" onclick="sendMessage()">Send</button>
+          <span style="font-size:22px; cursor:pointer;" onclick="alert('Emojis')">😊</span>
+          <span style="font-size:22px; cursor:pointer;" onclick="document.getElementById('file-input').click()">📎</span>
+          
+          <input type="text" id="message-input" placeholder="Message" class="wa-text-input">
+          
+          <span id="mic-btn" style="font-size:22px; cursor:pointer;" title="Hold to record voice">🎙️</span>
+          <button onclick="sendMessage()" class="wa-send-fab">➤</button>
         </div>
       </div>
     </div>
+
   </div>
 
   <script src="main.js"></script>
