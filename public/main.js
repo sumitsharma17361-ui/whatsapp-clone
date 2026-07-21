@@ -35,9 +35,14 @@ window.onload = () => {
   }
   setupMic();
   
-  window.recaptchaVerifier = new firebase.auth.RecaptchaVerifier('recaptcha-container', {
-    'size': 'invisible'
-  }, firebase.auth());
+  // Safe Recaptcha Initializer
+  try {
+    window.recaptchaVerifier = new firebase.auth.RecaptchaVerifier('recaptcha-container', {
+      'size': 'invisible'
+    }, firebase.auth());
+  } catch(e) {
+    console.log("Recaptcha init error:", e);
+  }
 };
 
 function toggleSidebar(show) {
@@ -49,7 +54,6 @@ function toggleSidebar(show) {
   }
 }
 
-// --- STRICT FIREBASE REAL SIM OTP LOGIN FLOW (Image 1 Lookalike) ---
 async function handleRealFirebaseOtpFlow() {
   const rawPhone = document.getElementById('auth-phone').value.trim();
   const otpSection = document.getElementById('otp-section');
@@ -60,6 +64,10 @@ async function handleRealFirebaseOtpFlow() {
   const fullPhone = "+91" + rawPhone.replace(/^\+91/, '');
 
   if(!appConfirmationResult) {
+    if (!window.recaptchaVerifier) {
+      window.recaptchaVerifier = new firebase.auth.RecaptchaVerifier('recaptcha-container', {'size': 'invisible'}, firebase.auth());
+    }
+
     firebase.auth().signInWithPhoneNumber(fullPhone, window.recaptchaVerifier)
       .then((confirmationResult) => {
         appConfirmationResult = confirmationResult;
@@ -75,7 +83,6 @@ async function handleRealFirebaseOtpFlow() {
 
     appConfirmationResult.confirm(otpCode)
       .then(async (result) => {
-        // Handshake with backend to generate session token & auto-register profile if new
         const res = await fetch('/api/verify-otp', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
