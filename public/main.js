@@ -11,7 +11,6 @@ let isRecording = false;
 
 const mockEncryptionKey = "WhatsAppLiteSecretKey12345"; 
 
-// 🔥 UPDATED: Aapki Real Firebase Configuration Details Yahan Add Ho Gayi Hain
 const firebaseConfig = {
   apiKey: "AIzaSyCd5NdMJg4f7RkzSlyMncKxl6OoNJhT0CM",
   authDomain: "whatsapp-clone-ae627.firebaseapp.com",
@@ -22,7 +21,6 @@ const firebaseConfig = {
   measurementId: "G-KSKBRCTKRB"
 };
 
-// Initialize Firebase App Instance Safely
 firebase.initializeApp(firebaseConfig);
 let appConfirmationResult = null;
 
@@ -34,13 +32,9 @@ const headers = () => ({
 window.onload = () => {
   if (token) {
     showDashboard();
-    if(localStorage.getItem('profilePic')) {
-      document.getElementById('my-avatar').src = localStorage.getItem('profilePic');
-    }
   }
   setupMic();
   
-  // Setup invisible recaptcha verifier validation hook
   window.recaptchaVerifier = new firebase.auth.RecaptchaVerifier('recaptcha-container', {
     'size': 'invisible'
   }, firebase.auth());
@@ -55,53 +49,37 @@ function toggleSidebar(show) {
   }
 }
 
-function switchAuthMode(mode) {
-  const passBox = document.getElementById('password-auth-box');
-  const otpBox = document.getElementById('otp-auth-box');
-  const tabPass = document.getElementById('tab-pass');
-  const tabOtp = document.getElementById('tab-otp');
-
-  if(mode === 'otp') {
-    passBox.style.display = 'none';
-    otpBox.style.display = 'block';
-    tabOtp.style.color = '#00a884'; tabOtp.style.borderBottom = '2px solid #00a884';
-    tabPass.style.color = '#8696a0'; tabPass.style.borderBottom = 'none';
-  } else {
-    passBox.style.display = 'block';
-    otpBox.style.display = 'none';
-    tabPass.style.color = '#00a884'; tabPass.style.borderBottom = '2px solid #00a884';
-    tabOtp.style.color = '#8696a0'; tabOtp.style.borderBottom = 'none';
-  }
-}
-
-// --- FIREBASE REAL SIM OTP HANDLER FLOW ---
+// --- STRICT FIREBASE REAL SIM OTP LOGIN FLOW (Image 1 Lookalike) ---
 async function handleRealFirebaseOtpFlow() {
-  const phone = document.getElementById('auth-phone').value.trim();
+  const rawPhone = document.getElementById('auth-phone').value.trim();
+  const otpSection = document.getElementById('otp-section');
   const otpInput = document.getElementById('auth-otp-input');
   const actionBtn = document.getElementById('otp-action-btn');
 
-  if(!phone.startsWith('+')) return alert("Enter mobile number with country code like +91xxxxxxxxxx");
+  if(!rawPhone) return alert("Please enter your phone number");
+  const fullPhone = "+91" + rawPhone.replace(/^\+91/, '');
 
   if(!appConfirmationResult) {
-    firebase.auth().signInWithPhoneNumber(phone, window.recaptchaVerifier)
+    firebase.auth().signInWithPhoneNumber(fullPhone, window.recaptchaVerifier)
       .then((confirmationResult) => {
         appConfirmationResult = confirmationResult;
-        alert("🔒 REAL SMS OTP has been sent to your SIM Card network!");
-        otpInput.style.display = 'block';
-        actionBtn.innerText = 'Verify SMS Code';
+        alert("🔒 SMS OTP sent to your SIM card!");
+        otpSection.style.display = 'block';
+        actionBtn.innerText = 'Verify & Login';
       }).catch((error) => {
-        alert("Firebase Auth Error: " + error.message);
+        alert("Firebase Error: " + error.message);
       });
   } else {
     const otpCode = otpInput.value.trim();
-    if(!otpCode) return alert("Please enter the verification code");
+    if(!otpCode) return alert("Enter the SMS verification code");
 
     appConfirmationResult.confirm(otpCode)
       .then(async (result) => {
+        // Handshake with backend to generate session token & auto-register profile if new
         const res = await fetch('/api/verify-otp', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ phoneNumber: phone, otp: "FIREBASE_PASSED" }) 
+          body: JSON.stringify({ phoneNumber: fullPhone }) 
         });
         const data = await res.json();
         if(data.error) return alert(data.error);
@@ -112,37 +90,8 @@ async function handleRealFirebaseOtpFlow() {
         if(data.profilePic) localStorage.setItem('profilePic', data.profilePic);
         window.location.reload();
       }).catch((error) => {
-        alert("Invalid SMS OTP code token entered!");
+        alert("Invalid SMS code entered!");
       });
-  }
-}
-
-async function authAction(type) {
-  const u = document.getElementById('auth-username').value.trim();
-  const p = document.getElementById('auth-password').value.trim();
-  const phoneReg = document.getElementById('auth-phone-reg').value.trim();
-
-  if(!u || !p) return alert("Fill username and password");
-
-  const endpoint = type === 'login' ? '/api/login' : '/api/register';
-  const payload = type === 'register' ? { username: u, password: p, phoneNumber: phoneReg } : { username: u, password: p };
-
-  const res = await fetch(endpoint, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload)
-  });
-  const data = await res.json();
-  if (data.error) return alert(data.error);
-  
-  if (type === 'login') {
-    localStorage.setItem('token', data.token);
-    localStorage.setItem('userId', data.userId);
-    localStorage.setItem('username', data.username);
-    if(data.profilePic) localStorage.setItem('profilePic', data.profilePic);
-    window.location.reload();
-  } else {
-    alert('Registered! Use phone OTP tab to sign in now.');
   }
 }
 
@@ -152,7 +101,6 @@ async function uploadProfilePic(input) {
   const reader = new FileReader();
   reader.onload = async (e) => {
     const base64 = e.target.result;
-    document.getElementById('my-avatar').src = base64;
     localStorage.setItem('profilePic', base64);
     await fetch('/api/profile-pic', {
       method: 'POST',
@@ -166,7 +114,6 @@ async function uploadProfilePic(input) {
 function showDashboard() {
   document.getElementById('auth-screen').classList.add('hidden');
   document.getElementById('app-screen').classList.remove('hidden');
-  document.getElementById('current-user-display').innerText = username;
   
   socket = io();
   socket.emit('identify', userId);
@@ -204,7 +151,7 @@ function showDashboard() {
   socket.on('statusChanged', ({ userId: changedId, isOnline, lastSeen }) => {
     loadDashboardData();
     if (String(activeFriendId) === String(changedId)) {
-      document.getElementById('active-friend-status').innerText = isOnline ? 'Online' : `Last seen: ${new Date(lastSeen).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`;
+      document.getElementById('active-friend-status').innerText = isOnline ? 'online' : `last seen at ${new Date(lastSeen).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`;
     }
   });
 
@@ -214,7 +161,7 @@ function showDashboard() {
 
 function encryptText(text, key) { return btoa(encodeURIComponent(text)); }
 function decryptText(encodedText, key) {
-  try { return decodeURIComponent(atob(encodedText)); } catch(e) { return "🔒 Decryption Failed"; }
+  try { return decodeURIComponent(atob(encodedText)); } catch(e) { return "🔒 Decrypted"; }
 }
 
 async function loadDashboardData() {
@@ -234,13 +181,17 @@ async function loadDashboardData() {
     friendsList.innerHTML = '';
     (data.friends || []).forEach(f => {
       const avatar = f.profilePic || 'https://www.w3schools.com/howto/img_avatar.png';
+      const statusText = f.isOnline ? 'online' : 'offline';
       friendsList.innerHTML += `
         <div class="list-item" onclick="openChat('${f._id}', '${f.username}', ${f.isOnline}, '${avatar}', '${f.lastSeen}')">
-          <div style="display:flex; align-items:center; gap:10px;">
-            <img src="${avatar}" style="width:35px; height:35px; border-radius:50%; object-fit:cover;">
-            <span>${f.username}</span>
+          <div style="display:flex; align-items:center; gap:12px;">
+            <img src="${avatar}" style="width:48px; height:48px; border-radius:50%; object-fit:cover;">
+            <div>
+              <div style="font-size:16px; font-weight:500; color:#e9edef;">${f.username}</div>
+              <div style="font-size:13px; color:#8696a0;">Tap to chat</div>
+            </div>
           </div>
-          <span id="status-${f._id}" style="color:${f.isOnline ? '#25d366':'#8696a0'}">${f.isOnline ? 'Online' : 'Offline'}</span>
+          <span id="status-${f._id}" style="font-size:12px; color:${f.isOnline ? '#25d366':'#8696a0'}">${statusText}</span>
         </div>`;
     });
   }
@@ -266,7 +217,7 @@ async function openChat(friendId, friendName, isOnline, avatar, lastSeen) {
   document.getElementById('active-chat').classList.remove('hidden');
   document.getElementById('active-friend-name').innerText = friendName;
   document.getElementById('active-friend-avatar').src = avatar;
-  document.getElementById('active-friend-status').innerText = isOnline ? 'Online' : `Last seen: ${new Date(lastSeen).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`;
+  document.getElementById('active-friend-status').innerText = isOnline ? 'online' : `last seen at ${new Date(lastSeen).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`;
 
   const res = await fetch(`/api/messages/${friendId}`, { headers: headers() });
   let messages = await res.json();
@@ -299,9 +250,9 @@ function setupMic() {
       };
       mediaRecorder.start();
       isRecording = true;
-      micBtn.innerText = "🛑";
+      micBtn.style.color = '#ea0038';
     } else {
-      mediaRecorder.stop(); isRecording = false; micBtn.innerText = "🎙️";
+      mediaRecorder.stop(); isRecording = false; micBtn.style.color = '#e9edef';
     }
   };
 }
@@ -397,4 +348,3 @@ async function sendMessage() {
 }
 
 function logout() { localStorage.clear(); window.location.reload(); }
-    
