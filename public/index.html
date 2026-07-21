@@ -7,13 +7,13 @@
   <link rel="stylesheet" href="style.css">
   <script src="/socket.io/socket.io.js"></script>
 
-  <!-- Firebase SDKs for Real SIM Phone Auth -->
+  <!-- Firebase Compat Scripts -->
   <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-auth-compat.js"></script>
 </head>
 <body>
 
-  <!-- ================= AUTHENTICATION SCREEN (Image 1 Lookalike) ================= -->
+  <!-- AUTHENTICATION SCREEN -->
   <div id="auth-screen" class="wa-auth-container">
     <div class="wa-auth-box">
       <h2>Enter your phone number</h2>
@@ -30,24 +30,21 @@
         </div>
       </div>
 
-      <!-- OTP Verification Input Box (Hidden initially) -->
       <div id="otp-section" style="display:none; margin-top:20px;">
-        <input type="text" id="auth-otp-input" placeholder="Enter 6-digit SMS code" style="width:100%; padding:12px; font-size:16px; border:1px solid #00a884; border-radius:6px; outline:none;">
+        <input type="text" id="auth-otp-input" placeholder="Enter 6-digit SMS code" style="width:100%; padding:12px; font-size:16px; border:1px solid #00a884; border-radius:6px; outline:none; background:#111b21; color:#fff;">
       </div>
 
-      <!-- Hidden Recaptcha container -->
-      <div id="recaptcha-container"></div>
+      <!-- Recaptcha Container Element -->
+      <div id="recaptcha-container" style="margin-top: 15px; display: flex; justify-content: center;"></div>
 
-      <div style="margin-top: 40px; text-align: center;">
+      <div style="margin-top: 30px; text-align: center;">
         <button id="otp-action-btn" onclick="handleRealFirebaseOtpFlow()" class="wa-next-btn">Next</button>
       </div>
     </div>
   </div>
 
-  <!-- ================= MAIN APP SCREEN (Image 2 & 3 Lookalike) ================= -->
+  <!-- MAIN APP SCREEN -->
   <div id="app-screen" class="wa-main-layout hidden">
-    
-    <!-- SIDEBAR CHATS LIST (Image 2 Lookalike) -->
     <div class="wa-sidebar" id="sidebar">
       <div class="wa-header">
         <h1 class="wa-logo">WhatsApp</h1>
@@ -55,7 +52,7 @@
           <span>₹</span>
           <span onclick="document.getElementById('avatar-input').click()" style="cursor:pointer;">📷</span>
           <input type="file" id="avatar-input" style="display:none;" accept="image/*" onchange="uploadProfilePic(this)">
-          <span onclick="logout()" title="Logout">⋮</span>
+          <span onclick="logout()" title="Logout" style="cursor:pointer;">⋮</span>
         </div>
       </div>
 
@@ -72,36 +69,20 @@
         <div id="friends-list"></div>
       </div>
 
-      <!-- Bottom WhatsApp Navigation Bar (Image 2 Bottom Tabs) -->
       <div class="wa-bottom-nav">
-        <div class="wa-nav-item active">
-          <span>💬</span>
-          <span class="wa-badge-count" id="chat-badge">3</span>
-          <span>Chats</span>
-        </div>
-        <div class="wa-nav-item">
-          <span>🔄</span>
-          <span>Updates</span>
-        </div>
-        <div class="wa-nav-item">
-          <span>👥</span>
-          <span>Communities</span>
-        </div>
-        <div class="wa-nav-item">
-          <span>📞</span>
-          <span>Calls</span>
-        </div>
+        <div class="wa-nav-item active"><span>💬</span><span>Chats</span></div>
+        <div class="wa-nav-item"><span>🔄</span><span>Updates</span></div>
+        <div class="wa-nav-item"><span>👥</span><span>Communities</span></div>
+        <div class="wa-nav-item"><span>📞</span><span>Calls</span></div>
       </div>
     </div>
 
-    <!-- ACTIVE CHAT WINDOW AREA (Image 3 Lookalike) -->
     <div class="wa-chat-pane mobile-hidden" id="chat-area">
       <div id="chat-placeholder" class="wa-empty-chat">
         <p>Select a chat to start messaging</p>
       </div>
       
       <div id="active-chat" class="wa-active-window hidden">
-        <!-- Top Chat Header -->
         <div class="wa-chat-pane-header">
           <div style="display: flex; align-items: center; gap: 12px;">
             <button onclick="toggleSidebar(true)" class="wa-back-arrow">⬅</button>
@@ -118,23 +99,20 @@
           </div>
         </div>
         
-        <!-- Messages Display Container with Wallpaper Background -->
         <div id="messages-display" class="wa-messages-box"></div>
         
-        <!-- Bottom Input Area (Image 3 Bottom Toolbar) -->
         <div class="wa-input-toolbar">
           <input type="file" id="file-input" style="display: none;" onchange="handleFileSelect(this)">
-          <span style="font-size:22px; cursor:pointer;" onclick="alert('Emojis')">😊</span>
+          <span style="font-size:22px; cursor:pointer;">😊</span>
           <span style="font-size:22px; cursor:pointer;" onclick="document.getElementById('file-input').click()">📎</span>
           
           <input type="text" id="message-input" placeholder="Message" class="wa-text-input">
           
-          <span id="mic-btn" style="font-size:22px; cursor:pointer;" title="Hold to record voice">🎙️</span>
+          <span id="mic-btn" style="font-size:22px; cursor:pointer;">🎙️</span>
           <button onclick="sendMessage()" class="wa-send-fab">➤</button>
         </div>
       </div>
     </div>
-
   </div>
 
   <script src="main.js"></script>
