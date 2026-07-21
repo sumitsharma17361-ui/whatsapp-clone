@@ -66,15 +66,15 @@
           </div>
         </div>
         
-        <!-- MESSAGES SCROLL AREA WITH WALLPAPER -->
+        <!-- MESSAGES SCROLL CONTAINER -->
         <div id="messages-display" class="messages-container"></div>
         
-        <!-- FIXED BOTTOM INPUT TOOLBAR (EXACT IMAGE 2 LOOK) -->
+        <!-- BOTTOM INPUT TOOLBAR -->
         <div class="chat-input-area">
           <input type="file" id="file-input" style="display: none;" onchange="handleFileSelect(this)">
-          <button class="attach-btn" onclick="document.getElementById('file-input').click()">📎</button>
+          <button class="attach-btn" onclick="document.getElementById('file-input').click()" title="Attach file">📎</button>
           <input type="text" id="message-input" placeholder="Type a message...">
-          <button id="mic-btn" class="mic-btn">🎙️</button>
+          <button id="mic-btn" class="mic-btn" title="Voice Note">🎙️</button>
           <button class="send-btn" onclick="sendMessage()">Send</button>
         </div>
       </div>
