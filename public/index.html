@@ -2,14 +2,14 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>WhatsApp Ultra</title>
   <link rel="stylesheet" href="style.css">
   <script src="/socket.io/socket.io.js"></script>
 </head>
 <body>
 
-  <!-- LOGIN / REGISTER SCREEN (Image 4 Lookalike) -->
+  <!-- LOGIN / REGISTER SCREEN -->
   <div id="auth-screen" class="centered-container">
     <div class="card">
       <h2 class="auth-title">WhatsApp Ultra</h2>
@@ -22,7 +22,7 @@
     </div>
   </div>
 
-  <!-- MAIN DASHBOARD APP SCREEN (Image 3 Lookalike) -->
+  <!-- MAIN DASHBOARD APP SCREEN -->
   <div id="app-screen" class="app-container hidden">
     <!-- LEFT SIDEBAR -->
     <div class="sidebar" id="sidebar">
@@ -49,13 +49,14 @@
       </div>
     </div>
 
-    <!-- RIGHT CHAT AREA WITH WALLPAPER -->
+    <!-- RIGHT CHAT AREA -->
     <div class="chat-area mobile-hidden" id="chat-area">
       <div id="chat-placeholder" class="centered-container">
         <p>Select a friend to start chatting</p>
       </div>
       
       <div id="active-chat" class="chat-window hidden">
+        <!-- TOP HEADER -->
         <div class="chat-header">
           <button id="back-btn" onclick="toggleSidebar(true)" class="btn-back">⬅</button>
           <img id="active-friend-avatar" src="https://www.w3schools.com/howto/img_avatar.png" class="avatar-img-chat">
@@ -65,9 +66,10 @@
           </div>
         </div>
         
-        <!-- MESSAGES BOX WITH LIGHT WHATSAPP WALLPAPER BACKGROUND -->
+        <!-- MESSAGES SCROLL AREA WITH WALLPAPER -->
         <div id="messages-display" class="messages-container"></div>
         
+        <!-- FIXED BOTTOM INPUT TOOLBAR (EXACT IMAGE 2 LOOK) -->
         <div class="chat-input-area">
           <input type="file" id="file-input" style="display: none;" onchange="handleFileSelect(this)">
           <button class="attach-btn" onclick="document.getElementById('file-input').click()">📎</button>
