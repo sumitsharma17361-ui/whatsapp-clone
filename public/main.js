@@ -58,7 +58,7 @@ async function authAction(type) {
     if(data.profilePic) localStorage.setItem('profilePic', data.profilePic);
     window.location.reload();
   } else {
-    alert('Registered successfully! Now login.');
+    alert('Registered successfully! Now click Login.');
   }
 }
 
@@ -131,16 +131,9 @@ function showDashboard() {
   loadDashboardData();
 }
 
-function encryptText(text, key) {
-  return btoa(encodeURIComponent(text));
-}
-
+function encryptText(text, key) { return btoa(encodeURIComponent(text)); }
 function decryptText(encodedText, key) {
-  try {
-     return decodeURIComponent(atob(encodedText));
-  } catch(e) {
-     return "🔒 Decryption Failed";
-  }
+  try { return decodeURIComponent(atob(encodedText)); } catch(e) { return "🔒 Decryption Failed"; }
 }
 
 async function loadDashboardData() {
@@ -150,7 +143,7 @@ async function loadDashboardData() {
   const reqList = document.getElementById('requests-list');
   reqList.innerHTML = '';
   (data.friendRequests || []).forEach(req => {
-    reqList.innerHTML += `<div class="list-item"><span>${req.username}</span><button class="btn-small" onclick="acceptFriend('${req._id}')">Accept</button></div>`;
+    reqList.innerHTML += `<div class="list-item"><span>${req.username}</span><button class="btn-logout" onclick="acceptFriend('${req._id}')">Accept</button></div>`;
   });
 
   const friendsList = document.getElementById('friends-list');
@@ -161,10 +154,10 @@ async function loadDashboardData() {
     friendsList.innerHTML += `
       <div class="list-item" onclick="openChat('${f._id}', '${f.username}', ${f.isOnline}, '${avatar}', '${f.lastSeen}')">
         <div style="display:flex; align-items:center; gap:10px;">
-          <img src="${avatar}" style="width:35px; height:35px; border-radius:50%; object-fit:cover;">
-          <span>${f.username}</span>
+          <img src="${avatar}" style="width:36px; height:36px; border-radius:50%; object-fit:cover;">
+          <span style="font-weight:600; color:#111b21;">${f.username}</span>
         </div>
-        <span id="status-${f._id}" style="color:${f.isOnline ? '#25d366':'#8696a0'}">${statusText}</span>
+        <span id="status-${f._id}" style="font-size:12px; color:${f.isOnline ? '#25d366':'#8696a0'}">${statusText}</span>
       </div>`;
   });
 }
@@ -202,9 +195,7 @@ async function openChat(friendId, friendName, isOnline, avatar, lastSeen) {
   display.innerHTML = '';
   
   messages.forEach(msg => {
-     if(msg.text && msg.isEncrypted) {
-        msg.text = decryptText(msg.text, mockEncryptionKey);
-     }
+     if(msg.text && msg.isEncrypted) msg.text = decryptText(msg.text, mockEncryptionKey);
      renderSingleMessage(msg);
   });
 }
