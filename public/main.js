@@ -11,7 +11,6 @@ let isRecording = false;
 
 const mockEncryptionKey = "WhatsAppLiteSecretKey12345"; 
 
-// 🔥 Firebase Project Configuration
 const firebaseConfig = {
   apiKey: "AIzaSyCd5NdMJg4f7RkzSlyMncKxl6OoNJhT0CM",
   authDomain: "whatsapp-clone-ae627.firebaseapp.com",
@@ -22,11 +21,12 @@ const firebaseConfig = {
   measurementId: "G-KSKBRCTKRB"
 };
 
-// Initialize Firebase App
 if (!firebase.apps.length) {
   firebase.initializeApp(firebaseConfig);
 }
+
 let appConfirmationResult = null;
+let recaptchaWidget = null;
 
 const headers = () => ({
   'Content-Type': 'application/json',
@@ -38,28 +38,24 @@ window.onload = () => {
     showDashboard();
   }
   setupMic();
-  
-  // Initialize Recaptcha Verifier on window load
-  initRecaptcha();
+  setupRecaptcha();
 };
 
-function initRecaptcha() {
+function setupRecaptcha() {
   try {
     if (!window.recaptchaVerifier) {
       window.recaptchaVerifier = new firebase.auth.RecaptchaVerifier('recaptcha-container', {
-        'size': 'invisible',
+        'size': 'normal', // VISIBLE recaptcha - prevents undefined verify errors
         'callback': (response) => {
-          // reCAPTCHA solved
-        },
-        'expired-callback': () => {
-          if (window.recaptchaVerifier) {
-            window.recaptchaVerifier.render().then(widgetId => grecaptcha.reset(widgetId));
-          }
+          // Captcha solved automatically
         }
-      }, firebase.auth());
+      });
+      window.recaptchaVerifier.render().then(widgetId => {
+        recaptchaWidget = widgetId;
+      });
     }
   } catch(e) {
-    console.log("Recaptcha initialization note:", e);
+    console.error("Recaptcha error:", e);
   }
 }
 
@@ -77,7 +73,6 @@ function toggleSidebar(show) {
   }
 }
 
-// --- STRICT FIREBASE REAL SIM OTP LOGIN FLOW ---
 async function handleRealFirebaseOtpFlow() {
   const rawPhone = document.getElementById('auth-phone').value.trim();
   const otpSection = document.getElementById('otp-section');
@@ -85,8 +80,7 @@ async function handleRealFirebaseOtpFlow() {
   const actionBtn = document.getElementById('otp-action-btn');
 
   if (!rawPhone) return alert("Please enter your phone number");
-  
-  // Format to standard E.164 phone format
+
   const fullPhone = "+91" + rawPhone.replace(/^\+91/, '').replace(/\s+/g, '');
 
   if (!appConfirmationResult) {
@@ -94,23 +88,26 @@ async function handleRealFirebaseOtpFlow() {
     actionBtn.disabled = true;
 
     try {
-      initRecaptcha();
+      if (!window.recaptchaVerifier) {
+        setupRecaptcha();
+      }
 
-      const confirmationResult = await firebase.auth().signInWithPhoneNumber(fullPhone, window.recaptchaVerifier);
+      const verifier = window.recaptchaVerifier;
+      const confirmationResult = await firebase.auth().signInWithPhoneNumber(fullPhone, verifier);
       appConfirmationResult = confirmationResult;
-      
-      alert("🔒 SMS OTP has been sent to your SIM card!");
+
+      alert("🔒 SMS OTP sent to your SIM card!");
       otpSection.style.display = 'block';
       actionBtn.innerText = 'Verify & Login';
       actionBtn.disabled = false;
     } catch (error) {
-      alert("Firebase Error: " + error.message);
+      alert("Error sending SMS: " + error.message);
       actionBtn.innerText = "Next";
       actionBtn.disabled = false;
       
-      // Reset recaptcha state on error
-      if (window.grecaptcha && window.recaptchaVerifier) {
-        window.recaptchaVerifier.render().then(widgetId => grecaptcha.reset(widgetId));
+      // Reset recaptcha if failed
+      if (window.grecaptcha && recaptchaWidget !== null) {
+        grecaptcha.reset(recaptchaWidget);
       }
     }
   } else {
@@ -123,14 +120,13 @@ async function handleRealFirebaseOtpFlow() {
     try {
       const result = await appConfirmationResult.confirm(otpCode);
       
-      // Send verified phone to backend for auto-login/register
       const res = await fetch('/api/verify-otp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ phoneNumber: fullPhone }) 
       });
       const data = await res.json();
-      
+
       if (data.error) {
         actionBtn.innerText = "Verify & Login";
         actionBtn.disabled = false;
@@ -141,10 +137,10 @@ async function handleRealFirebaseOtpFlow() {
       localStorage.setItem('userId', data.userId);
       localStorage.setItem('username', data.username);
       if (data.profilePic) localStorage.setItem('profilePic', data.profilePic);
-      
+
       window.location.reload();
     } catch (error) {
-      alert("Invalid SMS code entered!");
+      alert("Invalid SMS OTP code!");
       actionBtn.innerText = "Verify & Login";
       actionBtn.disabled = false;
     }
@@ -170,18 +166,18 @@ async function uploadProfilePic(input) {
 function showDashboard() {
   document.getElementById('auth-screen').classList.add('hidden');
   document.getElementById('app-screen').classList.remove('hidden');
-  
+
   socket = io();
   socket.emit('identify', userId);
 
   socket.on('receiveMessage', (msg) => {
     const msgSender = String(msg.sender._id || msg.sender);
     const msgReceiver = String(msg.receiver._id || msg.receiver);
-    
+
     if (activeFriendId && (msgSender === String(activeFriendId) || msgReceiver === String(activeFriendId))) {
       const tempBubble = document.getElementById(`temp-${msg.timestamp}`);
       if (tempBubble) tempBubble.remove();
-      
+
       if (msg.text && msg.isEncrypted) {
          msg.text = decryptText(msg.text, mockEncryptionKey);
       }
@@ -218,7 +214,6 @@ function showDashboard() {
   loadDashboardData();
 }
 
-// --- E2EE CRYPTO ALGORITHMS ---
 function encryptText(text, key) { return btoa(encodeURIComponent(text)); }
 function decryptText(encodedText, key) {
   try { return decodeURIComponent(atob(encodedText)); } catch(e) { return "🔒 Decrypted"; }
@@ -227,7 +222,7 @@ function decryptText(encodedText, key) {
 async function loadDashboardData() {
   const res = await fetch('/api/dashboard', { headers: headers() });
   const data = await res.json();
-  
+
   const reqList = document.getElementById('requests-list');
   if (reqList) {
     reqList.innerHTML = '';
@@ -285,7 +280,7 @@ async function openChat(friendId, friendName, isOnline, avatar, lastSeen) {
   let messages = await res.json();
   const display = document.getElementById('messages-display');
   display.innerHTML = '';
-  
+
   messages.forEach(msg => {
      if (msg.text && msg.isEncrypted) msg.text = decryptText(msg.text, mockEncryptionKey);
      renderSingleMessage(msg);
@@ -342,7 +337,7 @@ function renderSingleMessage(msg) {
   const currentLoggedUserId = String(userId);
   const type = msgSenderId === currentLoggedUserId ? 'sent' : 'received';
   let contentHtml = '<div class="media-box">';
-  
+
   if (msg.fileUrl) {
       if (msg.fileType.startsWith('image/')) contentHtml += `<img src="${msg.fileUrl}">`;
       else if (msg.fileType.startsWith('video/')) contentHtml += `<video src="${msg.fileUrl}" controls></video>`;
@@ -373,11 +368,11 @@ async function sendMessage() {
     selectedFile = null; 
     document.getElementById('file-input').value = ""; 
     input.value = '';
-    
+
     if (textToSend.includes('(Ready)')) textToSend = "";
     const timestamp = Date.now();
     const display = document.getElementById('messages-display');
-    
+
     display.innerHTML += `
       <div class="msg sent" id="temp-${timestamp}">
         <div class="media-box">
@@ -393,7 +388,7 @@ async function sendMessage() {
     const xhr = new XMLHttpRequest();
     xhr.open("POST", "/api/upload", true);
     xhr.setRequestHeader("Content-Type", "application/json");
-    
+
     xhr.upload.onprogress = function(event) {
       if (event.lengthComputable) {
         const percentComplete = Math.round((event.loaded / event.total) * 100);
@@ -403,7 +398,7 @@ async function sendMessage() {
         if (text) text.innerText = percentComplete + '%';
       }
     };
-    
+
     xhr.onload = function() {
       if (xhr.status === 200) {
         const response = JSON.parse(xhr.responseText);
@@ -426,7 +421,7 @@ async function sendMessage() {
         if (temp) temp.remove(); 
       }
     };
-    
+
     xhr.send(JSON.stringify({ fileName: filePayload.name, fileData: filePayload.data }));
   } else {
     let encryptedSecret = encryptText(textToSend, mockEncryptionKey);
@@ -443,5 +438,4 @@ async function sendMessage() {
 function logout() { 
   localStorage.clear(); 
   window.location.reload(); 
-    }
-                                                                                                    
+}
