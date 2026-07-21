@@ -3,6 +3,7 @@ const express = require('express');
 const http = require('http');
 const mongoose = require('mongoose');
 const socketIo = require('socket.io');
+const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const path = require('path');
 const fs = require('fs');
@@ -15,8 +16,11 @@ const server = http.createServer(app);
 const io = socketIo(server, { cors: { origin: "*" } });
 
 const JWT_SECRET = process.env.JWT_SECRET || 'supersecretkey';
+
 const UPLOADS_DIR = path.join(__dirname, 'public', 'uploads');
-if (!fs.existsSync(UPLOADS_DIR)){ fs.mkdirSync(UPLOADS_DIR, { recursive: true }); }
+if (!fs.existsSync(UPLOADS_DIR)){
+    fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+}
 
 app.use(express.json({ limit: '100mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
@@ -28,9 +32,13 @@ mongoose.connect(process.env.MONGODB_URI)
 app.post('/api/upload', async (req, res) => {
   try {
     const { fileName, fileData } = req.body;
+    if (!fileName || !fileData) return res.status(400).json({ error: 'No file data' });
+
     const buffer = Buffer.from(fileData.split(',')[1], 'base64');
     const uniqueFileName = Date.now() + '-' + fileName;
-    fs.writeFileSync(path.join(UPLOADS_DIR, uniqueFileName), buffer);
+    const filePath = path.join(UPLOADS_DIR, uniqueFileName);
+
+    fs.writeFileSync(filePath, buffer);
     res.json({ fileUrl: `/uploads/${uniqueFileName}` });
   } catch (err) { res.status(500).json({ error: 'Upload failed' }); }
 });
@@ -40,28 +48,28 @@ app.post('/api/profile-pic', async (req, res) => {
     const authHeader = req.headers['authorization'];
     const decoded = jwt.verify(authHeader, JWT_SECRET);
     await User.findByIdAndUpdate(decoded.userId, { profilePic: req.body.profilePic });
-    res.json({ message: "Updated" });
+    res.json({ message: "Profile updated" });
   } catch (err) { res.status(500).json({ error: "Failed" }); }
 });
 
-// --- STRICT PHONE OTP VERIFY & AUTO-LOGIN/REGISTER BACKEND API ---
-app.post('/api/verify-otp', async (req, res) => {
+app.post('/api/register', async (req, res) => {
   try {
-    const { phoneNumber } = req.body;
-    let user = await User.findOne({ phoneNumber });
+    const { username, password } = req.body;
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const user = new User({ username, password: hashedPassword });
+    await user.save();
+    res.status(201).json({ message: 'Registered successfully' });
+  } catch (err) { res.status(400).json({ error: 'Username already exists' }); }
+});
 
-    if (!user) {
-      // Auto-register new phone user with clean generated name
-      const randomName = "User_" + phoneNumber.slice(-4);
-      user = new User({ username: randomName, phoneNumber, password: "firebase_auth_secure" });
-      await user.save();
-    }
-
-    const token = jwt.sign({ userId: user._id, username: user.username }, JWT_SECRET);
-    res.json({ token, userId: user._id, username: user.username, profilePic: user.profilePic });
-  } catch(err) {
-    res.status(500).json({ error: 'Server authentication error' });
+app.post('/api/login', async (req, res) => {
+  const { username, password } = req.body;
+  const user = await User.findOne({ username });
+  if (!user || !(await bcrypt.compare(password, user.password))) {
+    return res.status(400).json({ error: 'Invalid credentials' });
   }
+  const token = jwt.sign({ userId: user._id, username: user.username }, JWT_SECRET);
+  res.json({ token, userId: user._id, username: user.username, profilePic: user.profilePic });
 });
 
 const auth = (req, res, next) => {
@@ -79,7 +87,7 @@ app.post('/api/friend-request', auth, async (req, res) => {
   const targetUser = await User.findOne({ username: targetUsername });
   if (!targetUser) return res.status(404).json({ error: 'User not found' });
   if (targetUser.friendRequests.includes(req.user.userId) || targetUser.friends.includes(req.user.userId)) {
-    return res.status(400).json({ error: 'Already friends or requested' });
+    return res.status(400).json({ error: 'Already sent or friends' });
   }
   targetUser.friendRequests.push(req.user.userId);
   await targetUser.save();
