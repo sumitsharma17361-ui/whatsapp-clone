@@ -7,7 +7,7 @@
   <link rel="stylesheet" href="style.css">
   <script src="/socket.io/socket.io.js"></script>
 
-  <!-- Firebase Compat Scripts -->
+  <!-- Firebase Legacy Compat SDKs -->
   <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-auth-compat.js"></script>
 </head>
@@ -30,14 +30,14 @@
         </div>
       </div>
 
+      <!-- Visible Recaptcha Box (Prevents JS crash) -->
+      <div id="recaptcha-container" style="margin: 15px 0; display: flex; justify-content: center;"></div>
+
       <div id="otp-section" style="display:none; margin-top:20px;">
         <input type="text" id="auth-otp-input" placeholder="Enter 6-digit SMS code" style="width:100%; padding:12px; font-size:16px; border:1px solid #00a884; border-radius:6px; outline:none; background:#111b21; color:#fff;">
       </div>
 
-      <!-- Recaptcha Container Element -->
-      <div id="recaptcha-container" style="margin-top: 15px; display: flex; justify-content: center;"></div>
-
-      <div style="margin-top: 30px; text-align: center;">
+      <div style="margin-top: 20px; text-align: center;">
         <button id="otp-action-btn" onclick="handleRealFirebaseOtpFlow()" class="wa-next-btn">Next</button>
       </div>
     </div>
@@ -105,9 +105,7 @@
           <input type="file" id="file-input" style="display: none;" onchange="handleFileSelect(this)">
           <span style="font-size:22px; cursor:pointer;">😊</span>
           <span style="font-size:22px; cursor:pointer;" onclick="document.getElementById('file-input').click()">📎</span>
-          
           <input type="text" id="message-input" placeholder="Message" class="wa-text-input">
-          
           <span id="mic-btn" style="font-size:22px; cursor:pointer;">🎙️</span>
           <button onclick="sendMessage()" class="wa-send-fab">➤</button>
         </div>
