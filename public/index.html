@@ -59,7 +59,7 @@
       </div>
       
       <div id="active-chat" class="chat-window hidden">
-        <!-- TOP HEADER WITH SEARCH -->
+        <!-- TOP HEADER WITH SEARCH AND CLEAR CHAT -->
         <div class="chat-header">
           <div style="display: flex; align-items: center; gap: 10px; flex: 1;">
             <button id="back-btn" onclick="toggleSidebar(true)" class="btn-back">⬅</button>
@@ -72,6 +72,7 @@
           <div class="chat-header-actions">
             <input type="text" id="in-chat-search" placeholder="Search in chat..." oninput="searchInChat(this.value)" class="chat-search-input hidden">
             <button onclick="toggleInChatSearch()" class="icon-btn" title="Search Message">🔍</button>
+            <button onclick="clearFullChat()" class="icon-btn" title="Clear Chat" style="color:#ea0038;">🗑️</button>
           </div>
         </div>
         
