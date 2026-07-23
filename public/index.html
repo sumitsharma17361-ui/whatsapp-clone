@@ -15,7 +15,7 @@
     <img id="modal-img" class="modal-content">
   </div>
 
-  <!-- LOGIN / REGISTER SCREEN -->
+  <!-- AUTHENTICATION SCREEN -->
   <div id="auth-screen" class="centered-container">
     <div class="card">
       <h2 class="auth-title">WhatsApp Ultra</h2>
@@ -28,7 +28,7 @@
     </div>
   </div>
 
-  <!-- MAIN DASHBOARD APP SCREEN -->
+  <!-- MAIN APP CONTAINER -->
   <div id="app-screen" class="app-container hidden">
     <!-- LEFT SIDEBAR -->
     <div class="sidebar" id="sidebar">
@@ -65,7 +65,7 @@
       </div>
       
       <div id="active-chat" class="chat-window hidden">
-        <!-- TOP HEADER WITH SEARCH AND CLEAR CHAT -->
+        <!-- CHAT HEADER -->
         <div class="chat-header">
           <div style="display: flex; align-items: center; gap: 10px; flex: 1;">
             <button id="back-btn" onclick="toggleSidebar(true)" class="btn-back">⬅</button>
@@ -94,7 +94,7 @@
           <button onclick="cancelReply()" style="background:transparent; border:none; font-size:16px; cursor:pointer; color:var(--text-secondary);">✕</button>
         </div>
 
-        <!-- BOTTOM INPUT TOOLBAR -->
+        <!-- INPUT TOOLBAR -->
         <div class="chat-input-area">
           <input type="file" id="file-input" style="display: none;" onchange="handleFileSelect(this)">
           <button class="attach-btn" onclick="document.getElementById('file-input').click()" title="Attach file">📎</button>
