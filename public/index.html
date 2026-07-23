@@ -9,6 +9,12 @@
 </head>
 <body class="light-theme">
 
+  <!-- LIGHTBOX IMAGE MODAL -->
+  <div id="image-modal" class="modal-overlay hidden" onclick="closeImageModal()">
+    <span class="modal-close">&times;</span>
+    <img id="modal-img" class="modal-content">
+  </div>
+
   <!-- LOGIN / REGISTER SCREEN -->
   <div id="auth-screen" class="centered-container">
     <div class="card">
@@ -79,6 +85,15 @@
         <!-- MESSAGES CONTAINER -->
         <div id="messages-display" class="messages-container"></div>
         
+        <!-- QUOTE REPLY BAR PREVIEW -->
+        <div id="reply-preview-bar" class="reply-preview-bar hidden">
+          <div style="flex:1;">
+            <span style="font-size:11px; font-weight:bold; color:#00a884;">Replying to:</span>
+            <p id="reply-preview-text" style="font-size:13px; margin-top:2px; color:var(--text-primary); text-overflow:ellipsis; overflow:hidden; white-space:nowrap;"></p>
+          </div>
+          <button onclick="cancelReply()" style="background:transparent; border:none; font-size:16px; cursor:pointer; color:var(--text-secondary);">✕</button>
+        </div>
+
         <!-- BOTTOM INPUT TOOLBAR -->
         <div class="chat-input-area">
           <input type="file" id="file-input" style="display: none;" onchange="handleFileSelect(this)">
