@@ -120,9 +120,12 @@ function showDashboard() {
     }
   });
 
+  // REAL-TIME DELETE MESSAGE DOM UPDATE
   socket.on('msgDeleted', ({ msgId }) => {
-    const el = document.getElementById(`msg-${msgId}`);
-    if (el) el.innerHTML = '<p style="font-style:italic; color:#8696a0;">🚫 This message was deleted</p>';
+    const el = document.getElementById(`msg-container-${msgId}`);
+    if (el) {
+      el.innerHTML = '<p style="font-style:italic; color:#8696a0; font-size:13px; margin:2px 0;">🚫 This message was deleted</p>';
+    }
   });
 
   socket.on('statusChanged', ({ userId: changedId, isOnline, lastSeen }) => {
@@ -288,8 +291,10 @@ function renderSingleMessage(msg) {
   const currentLoggedUserId = String(userId);
   const type = msgSenderId === currentLoggedUserId ? 'sent' : 'received';
   
-  let contentHtml = `<div class="media-box" id="msg-${msg._id}">`;
-  if(type === 'sent') contentHtml += `<button class="msg-del-btn" onclick="deleteMessage('${msg._id}')">✕</button>`;
+  let contentHtml = `<div class="media-box" id="msg-container-${msg._id}">`;
+  if(type === 'sent' && msg.text !== '🚫 This message was deleted') {
+    contentHtml += `<button class="msg-del-btn" onclick="deleteMessage('${msg._id}')">✕</button>`;
+  }
 
   if (msg.fileUrl) {
       if (msg.fileType.startsWith('image/')) contentHtml += `<img src="${msg.fileUrl}">`;
@@ -309,7 +314,7 @@ function renderSingleMessage(msg) {
   }
 
   contentHtml += '</div>';
-  display.innerHTML += `<div class="msg ${type}">${contentHtml}</div>`;
+  display.innerHTML += `<div class="msg ${type}" id="msg-${msg._id}">${contentHtml}</div>`;
   display.scrollTop = display.scrollHeight;
 }
 
