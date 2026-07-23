@@ -148,6 +148,21 @@ io.on('connection', (socket) => {
     io.to(data.senderId).emit('receiveMessage', msg);
   });
 
+  socket.on('typing', ({ receiverId, isTyping }) => {
+    io.to(receiverId).emit('typingEmit', { senderId: currentUserId, isTyping });
+  });
+
+  // REAL-TIME DELETE FOR EVERYONE EVENT LISTENER
+  socket.on('deleteMsgEmit', async ({ msgId, receiverId }) => {
+    try {
+      await Message.findByIdAndUpdate(msgId, { text: '🚫 This message was deleted', fileUrl: null, fileName: null, fileType: null, isEncrypted: false });
+      io.to(receiverId).emit('msgDeleted', { msgId });
+      io.to(currentUserId).emit('msgDeleted', { msgId });
+    } catch(err) {
+      console.log('Delete error:', err);
+    }
+  });
+
   socket.on('readEmit', async ({ msgId, senderId }) => {
      await Message.findByIdAndUpdate(msgId, { status: 'read' });
      io.to(senderId).emit('msgStatusUpdate', { msgId, status: 'read' });
