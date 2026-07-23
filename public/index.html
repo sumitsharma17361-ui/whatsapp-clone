@@ -3,11 +3,11 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>WhatsApp Ultra</title>
+  <title>WhatsApp Ultra Pro</title>
   <link rel="stylesheet" href="style.css">
   <script src="/socket.io/socket.io.js"></script>
 </head>
-<body>
+<body class="light-theme">
 
   <!-- LOGIN / REGISTER SCREEN -->
   <div id="auth-screen" class="centered-container">
@@ -32,7 +32,10 @@
           <img id="my-avatar" src="https://www.w3schools.com/howto/img_avatar.png" onclick="document.getElementById('avatar-input').click()" title="Click to change profile picture" class="avatar-img">
           <h3 id="current-user-display">SUMIT</h3>
         </div>
-        <button onclick="logout()" class="btn-logout">Logout</button>
+        <div style="display: flex; gap: 8px; align-items: center;">
+          <button onclick="toggleTheme()" class="btn-theme-toggle" title="Toggle Dark/Light Mode">🌙</button>
+          <button onclick="logout()" class="btn-logout">Logout</button>
+        </div>
       </div>
       
       <div class="search-box">
@@ -56,24 +59,30 @@
       </div>
       
       <div id="active-chat" class="chat-window hidden">
-        <!-- TOP HEADER -->
+        <!-- TOP HEADER WITH SEARCH -->
         <div class="chat-header">
-          <button id="back-btn" onclick="toggleSidebar(true)" class="btn-back">⬅</button>
-          <img id="active-friend-avatar" src="https://www.w3schools.com/howto/img_avatar.png" class="avatar-img-chat">
-          <div class="header-info">
-            <span id="active-friend-name">Friend Name</span>
-            <span id="active-friend-status" class="status-indicator">Offline</span>
+          <div style="display: flex; align-items: center; gap: 10px; flex: 1;">
+            <button id="back-btn" onclick="toggleSidebar(true)" class="btn-back">⬅</button>
+            <img id="active-friend-avatar" src="https://www.w3schools.com/howto/img_avatar.png" class="avatar-img-chat">
+            <div class="header-info">
+              <span id="active-friend-name">Friend Name</span>
+              <span id="active-friend-status" class="status-indicator">Offline</span>
+            </div>
+          </div>
+          <div class="chat-header-actions">
+            <input type="text" id="in-chat-search" placeholder="Search in chat..." oninput="searchInChat(this.value)" class="chat-search-input hidden">
+            <button onclick="toggleInChatSearch()" class="icon-btn" title="Search Message">🔍</button>
           </div>
         </div>
         
-        <!-- MESSAGES SCROLL CONTAINER -->
+        <!-- MESSAGES CONTAINER -->
         <div id="messages-display" class="messages-container"></div>
         
         <!-- BOTTOM INPUT TOOLBAR -->
         <div class="chat-input-area">
           <input type="file" id="file-input" style="display: none;" onchange="handleFileSelect(this)">
           <button class="attach-btn" onclick="document.getElementById('file-input').click()" title="Attach file">📎</button>
-          <input type="text" id="message-input" placeholder="Type a message...">
+          <input type="text" id="message-input" placeholder="Type a message..." oninput="handleTyping()">
           <button id="mic-btn" class="mic-btn" title="Voice Note">🎙️</button>
           <button class="send-btn" onclick="sendMessage()">➤</button>
         </div>
