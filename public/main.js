@@ -268,18 +268,55 @@ async function loadStatuses() {
 }
 
 async function openStatusCreator() {
-  const text = prompt("Enter status text message:");
-  if(!text) return;
-  
-  const res = await fetch('/api/status', {
-    method: 'POST',
-    headers: headers(),
-    body: JSON.stringify({ mediaType: 'text', text, bgColor: '#111b21' })
-  });
-  if(res.ok) {
-    alert("Status uploaded successfully!");
-    loadStatuses();
+  const text = prompt("Enter status text message (or cancel to upload photo/video):");
+  if(text !== null) {
+    if(!text.trim()) return;
+    const res = await fetch('/api/status', {
+      method: 'POST',
+      headers: headers(),
+      body: JSON.stringify({ mediaType: 'text', text, bgColor: '#111b21' })
+    });
+    if(res.ok) {
+      alert("Text status uploaded!");
+      loadStatuses();
+    }
   }
+}
+
+async function uploadStatusMedia(input) {
+  const file = input.files[0];
+  if(!file) return;
+
+  const reader = new FileReader();
+  reader.onload = async function(e) {
+    const fileData = e.target.result;
+    const mediaType = file.type.startsWith('video/') ? 'video' : 'image';
+
+    const uploadRes = await fetch('/api/upload', {
+      method: 'POST',
+      headers: headers(),
+      body: JSON.stringify({ fileName: file.name, fileData })
+    });
+    const uploadData = await uploadRes.json();
+    if(uploadData.error) return alert("Upload failed");
+
+    const statusRes = await fetch('/api/status', {
+      method: 'POST',
+      headers: headers(),
+      body: JSON.stringify({ 
+        mediaType, 
+        mediaUrl: uploadData.fileUrl, 
+        text: prompt("Add a caption (optional):") || "" 
+      })
+    });
+
+    if(statusRes.ok) {
+      alert("Media status uploaded successfully!");
+      loadStatuses();
+    }
+    input.value = '';
+  };
+  reader.readAsDataURL(file);
 }
 
 function viewStatus(st) {
@@ -289,14 +326,14 @@ function viewStatus(st) {
   modal.className = 'status-story-modal';
   modal.innerHTML = `
     <div class="status-progress-bar"><div class="status-progress-fill"></div></div>
-    <div style="position:absolute; top:30px; left:20px; display:flex; align-items:center; gap:10px;">
+    <div style="position:absolute; top:30px; left:20px; display:flex; align-items:center; gap:10px; z-index:10;">
       <img src="${st.user.profilePic || 'https://www.w3schools.com/howto/img_avatar.png'}" style="width:35px; height:35px; border-radius:50%;">
       <span style="font-weight:bold; font-size:14px;">${st.user.username}</span>
     </div>
-    <span onclick="this.parentElement.remove()" style="position:absolute; top:25px; right:25px; font-size:28px; cursor:pointer;">&times;</span>
-    <div style="padding:40px; text-align:center; font-size:22px; font-weight:bold; background:${st.bgColor}; width:100%; height:100%; display:flex; align-items:center; justify-content:center;">
-      ${st.text || ''}
-      ${st.mediaUrl ? `<img src="${st.mediaUrl}" style="max-width:100%; max-height:80vh;">` : ''}
+    <span onclick="this.parentElement.remove()" style="position:absolute; top:25px; right:25px; font-size:28px; cursor:pointer; z-index:10;">&times;</span>
+    <div style="padding:40px; text-align:center; font-size:20px; font-weight:bold; background:${st.bgColor || '#000'}; width:100%; height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:15px;">
+      ${st.mediaUrl ? `<img src="${st.mediaUrl}" style="max-width:90%; max-height:75vh; border-radius:8px;">` : ''}
+      ${st.text ? `<span>${st.text}</span>` : ''}
     </div>
   `;
   document.body.appendChild(modal);
@@ -550,4 +587,3 @@ async function sendMessage() {
 }
 
 function logout() { localStorage.clear(); window.location.reload(); }
-    
