@@ -4,6 +4,7 @@ let userId = localStorage.getItem('userId');
 let username = localStorage.getItem('username');
 let activeFriendId = null;
 let selectedFile = null;
+let replyMessageData = null;
 
 let mediaRecorder;
 let audioChunks = [];
@@ -18,6 +19,8 @@ const headers = () => ({
   'Content-Type': 'application/json',
   'Authorization': localStorage.getItem('token')
 });
+
+const notifySound = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
 
 window.onload = () => {
   if (token) {
@@ -103,6 +106,11 @@ function showDashboard() {
   socket.on('receiveMessage', (msg) => {
     const msgSender = String(msg.sender._id || msg.sender);
     const msgReceiver = String(msg.receiver._id || msg.receiver);
+    
+    if(msgSender !== String(userId)) {
+      try { notifySound.play(); } catch(e){}
+    }
+
     if (activeFriendId && (msgSender === String(activeFriendId) || msgReceiver === String(activeFriendId))) {
       const tempBubble = document.getElementById(`temp-${msg.timestamp}`);
       if (tempBubble) tempBubble.remove();
@@ -120,7 +128,14 @@ function showDashboard() {
     }
   });
 
-  // REAL-TIME DELETE MESSAGE DOM UPDATE
+  socket.on('reactionReceived', ({ msgId, emoji }) => {
+    const el = document.getElementById(`reaction-badge-${msgId}`);
+    if(el) {
+      el.innerText = emoji;
+      el.classList.remove('hidden');
+    }
+  });
+
   socket.on('msgDeleted', ({ msgId }) => {
     const el = document.getElementById(`msg-container-${msgId}`);
     if (el) {
@@ -128,7 +143,6 @@ function showDashboard() {
     }
   });
 
-  // REAL-TIME CLEAR CHAT EVENT
   socket.on('chatClearedEvent', () => {
     const display = document.getElementById('messages-display');
     if (display) display.innerHTML = '';
@@ -192,8 +206,9 @@ async function loadDashboardData() {
     const isPinned = pinnedFriends.includes(f._id);
     friendsList.innerHTML += `
       <div class="list-item" onclick="openChat('${f._id}', '${f.username}', ${f.isOnline}, '${avatar}', '${f.lastSeen}')">
-        <div style="display:flex; align-items:center; gap:10px;">
-          <img src="${avatar}" style="width:36px; height:36px; border-radius:50%; object-fit:cover;">
+        <div style="display:flex; align-items:center; gap:10px; position:relative;">
+          <img src="${avatar}" style="width:38px; height:38px; border-radius:50%; object-fit:cover;">
+          ${f.isOnline ? '<span class="online-dot"></span>' : ''}
           <span style="font-weight:600;">${f.username} ${isPinned ? '<span class="pin-icon">📌</span>':''}</span>
         </div>
         <div style="display:flex; align-items:center; gap:8px;">
@@ -235,6 +250,31 @@ async function openChat(friendId, friendName, isOnline, avatar, lastSeen) {
      if(msg.text && msg.isEncrypted) msg.text = decryptText(msg.text, mockEncryptionKey);
      renderSingleMessage(msg);
   });
+}
+
+function setReply(msgText) {
+  replyMessageData = msgText;
+  document.getElementById('reply-preview-text').innerText = msgText;
+  document.getElementById('reply-preview-bar').classList.remove('hidden');
+  document.getElementById('message-input').focus();
+}
+
+function cancelReply() {
+  replyMessageData = null;
+  document.getElementById('reply-preview-bar').classList.add('hidden');
+}
+
+function sendReaction(msgId, emoji) {
+  socket.emit('reactionEmit', { msgId, emoji, receiverId: activeFriendId });
+}
+
+function openImageModal(url) {
+  document.getElementById('modal-img').src = url;
+  document.getElementById('image-modal').classList.remove('hidden');
+}
+
+function closeImageModal() {
+  document.getElementById('image-modal').classList.add('hidden');
 }
 
 function toggleInChatSearch() {
@@ -315,19 +355,44 @@ function renderSingleMessage(msg) {
   const type = msgSenderId === currentLoggedUserId ? 'sent' : 'received';
   
   let contentHtml = `<div class="media-box" id="msg-container-${msg._id}">`;
+  
+  if(msg.replyTo) {
+    contentHtml += `<div class="quoted-reply-box">↩ ${msg.replyTo}</div>`;
+  }
+
   if(type === 'sent' && msg.text !== '🚫 This message was deleted') {
     contentHtml += `<button class="msg-del-btn" onclick="deleteMessage('${msg._id}')">✕</button>`;
   }
 
   if (msg.fileUrl) {
-      if (msg.fileType.startsWith('image/')) contentHtml += `<img src="${msg.fileUrl}">`;
-      else if (msg.fileType.startsWith('video/')) contentHtml += `<video src="${msg.fileUrl}" controls></video>`;
-      else if (msg.fileType.startsWith('audio/')) contentHtml += `<audio src="${msg.fileUrl}" controls style="max-width:100%;"></audio>`;
-      else contentHtml += `<div style="padding:10px; background:#0000000d; border-radius:6px; margin-bottom:5px;">📄 ${msg.fileName}</div>`;
+      if (msg.fileType.startsWith('image/')) {
+        contentHtml += `<img src="${msg.fileUrl}" onclick="openImageModal('${msg.fileUrl}')" style="cursor:pointer;">`;
+      } else if (msg.fileType.startsWith('video/')) {
+        contentHtml += `<video src="${msg.fileUrl}" controls></video>`;
+      } else if (msg.fileType.startsWith('audio/')) {
+        contentHtml += `<audio src="${msg.fileUrl}" controls style="width:100%; margin:4px 0;"></audio>`;
+      } else {
+        contentHtml += `<div style="padding:10px; background:#0000000d; border-radius:6px; margin-bottom:5px;">📄 ${msg.fileName}</div>`;
+      }
       contentHtml += `<a href="${msg.fileUrl}" download="${msg.fileName}" style="color:#00a884; text-decoration:none; font-size:12px; font-weight:bold; display:block; margin-top:6px;">⬇ Download File</a>`;
   }
   
   if (msg.text) contentHtml += `<p style="margin-top:4px;">${msg.text}</p>`;
+
+  if (msg.text !== '🚫 This message was deleted') {
+    contentHtml += `
+      <div class="msg-action-row">
+        <span onclick="setReply('${msg.text || msg.fileName}')" class="reply-action-btn">↩ Reply</span>
+        <div class="emoji-picker-inline">
+          <span onclick="sendReaction('${msg._id}', '❤️')">❤️</span>
+          <span onclick="sendReaction('${msg._id}', '👍')">👍</span>
+          <span onclick="sendReaction('${msg._id}', '😂')">😂</span>
+          <span onclick="sendReaction('${msg._id}', '😮')">😮</span>
+        </div>
+      </div>
+      <span id="reaction-badge-${msg._id}" class="reaction-badge hidden"></span>
+    `;
+  }
 
   if(type === 'sent') {
      let tickSymbol = '✓'; let tickColor = '#8696a0';
@@ -345,6 +410,9 @@ async function sendMessage() {
   const input = document.getElementById('message-input');
   let textToSend = input.value.trim();
   if (!textToSend && !selectedFile) return;
+
+  let currentReplyTo = replyMessageData;
+  cancelReply();
 
   if (selectedFile) {
     const filePayload = selectedFile; selectedFile = null; document.getElementById('file-input').value = ""; input.value = '';
@@ -383,7 +451,7 @@ async function sendMessage() {
         const response = JSON.parse(xhr.responseText);
         if (response.fileUrl) {
           let cipherText = textToSend ? encryptText(textToSend, mockEncryptionKey) : "";
-          socket.emit('sendMessage', { senderId: userId, receiverId: activeFriendId, text: cipherText, fileUrl: response.fileUrl, fileName: filePayload.name, fileType: filePayload.type, timestamp: timestamp, isEncrypted: true });
+          socket.emit('sendMessage', { senderId: userId, receiverId: activeFriendId, text: cipherText, fileUrl: response.fileUrl, fileName: filePayload.name, fileType: filePayload.type, timestamp: timestamp, isEncrypted: true, replyTo: currentReplyTo });
         }
       } else { alert("File upload failed."); const temp = document.getElementById(`temp-${timestamp}`); if(temp) temp.remove(); }
     };
@@ -391,7 +459,7 @@ async function sendMessage() {
 
   } else {
     let encryptedSecret = encryptText(textToSend, mockEncryptionKey);
-    socket.emit('sendMessage', { senderId: userId, receiverId: activeFriendId, text: encryptedSecret, isEncrypted: true });
+    socket.emit('sendMessage', { senderId: userId, receiverId: activeFriendId, text: encryptedSecret, isEncrypted: true, replyTo: currentReplyTo });
     input.value = '';
   }
 }
