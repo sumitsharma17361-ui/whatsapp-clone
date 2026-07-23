@@ -1,14 +1,13 @@
 const mongoose = require('mongoose');
 
-const UserSchema = new mongoose.Schema({
+const userSchema = new mongoose.Schema({
   username: { type: String, required: true, unique: true },
-  phoneNumber: { type: String, unique: true, sparse: true }, // Mobile number login support
   password: { type: String, required: true },
-  friends: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
-  friendRequests: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+  profilePic: { type: String, default: '' },
   isOnline: { type: Boolean, default: false },
-  profilePic: { type: String, default: "" },
-  lastSeen: { type: Date, default: Date.now }
+  lastSeen: { type: Date, default: Date.now },
+  friends: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+  friendRequests: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }]
 });
 
-module.exports = mongoose.model('User', UserSchema);
+module.exports = mongoose.model('User', userSchema);
