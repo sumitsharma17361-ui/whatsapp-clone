@@ -9,13 +9,11 @@
 </head>
 <body class="light-theme">
 
-  <!-- LIGHTBOX IMAGE MODAL -->
   <div id="image-modal" class="modal-overlay hidden" onclick="closeImageModal()">
     <span class="modal-close">&times;</span>
     <img id="modal-img" class="modal-content">
   </div>
 
-  <!-- AUTHENTICATION SCREEN -->
   <div id="auth-screen" class="centered-container">
     <div class="card">
       <h2 class="auth-title">WhatsApp Ultra</h2>
@@ -28,9 +26,7 @@
     </div>
   </div>
 
-  <!-- MAIN APP CONTAINER -->
   <div id="app-screen" class="app-container hidden">
-    <!-- LEFT SIDEBAR -->
     <div class="sidebar" id="sidebar">
       <div class="sidebar-header">
         <div class="profile-info">
@@ -43,6 +39,11 @@
           <button onclick="logout()" class="btn-logout">Logout</button>
         </div>
       </div>
+
+      <div class="sidebar-tabs" style="display: flex; background: var(--header-bg); border-bottom: 1px solid var(--border-color);">
+        <button onclick="switchTab('chats')" class="tab-btn active" id="tab-chats-btn" style="flex:1; padding:10px; border:none; background:transparent; font-weight:bold; cursor:pointer; color:var(--text-primary); border-bottom:2px solid #00a884;">Chats</button>
+        <button onclick="switchTab('status')" class="tab-btn" id="tab-status-btn" style="flex:1; padding:10px; border:none; background:transparent; font-weight:bold; cursor:pointer; color:var(--text-secondary);">Status</button>
+      </div>
       
       <div class="search-box">
         <input type="text" id="target-username" placeholder="Add friend username...">
@@ -50,22 +51,38 @@
       </div>
 
       <div class="sidebar-scroll">
-        <div class="section-title">PENDING REQUESTS</div>
-        <div id="requests-list" class="list-container"></div>
+        <div id="friends-list" class="list-container">
+          <div class="section-title">PENDING REQUESTS</div>
+          <div id="requests-list" class="list-container"></div>
+          <div class="section-title">CHATS</div>
+          <div id="chats-sublist"></div>
+        </div>
 
-        <div class="section-title">CHATS</div>
-        <div id="friends-list" class="list-container"></div>
+        <div id="status-view-container" class="list-container hidden">
+          <div class="list-item" onclick="openStatusCreator()">
+            <div style="display:flex; align-items:center; gap:10px;">
+              <div style="position:relative;">
+                <img id="my-status-avatar" src="https://www.w3schools.com/howto/img_avatar.png" style="width:40px; height:40px; border-radius:50%; object-fit:cover;">
+                <span style="position:absolute; bottom:0; right:0; background:#00a884; color:white; border-radius:50%; width:16px; height:16px; font-size:12px; display:flex; align-items:center; justify-content:center;">+</span>
+              </div>
+              <div>
+                <span style="font-weight:600; display:block;">My Status</span>
+                <span style="font-size:12px; color:var(--text-secondary);">Tap to add status update</span>
+              </div>
+            </div>
+          </div>
+          <div class="section-title">RECENT UPDATES</div>
+          <div id="statuses-list"></div>
+        </div>
       </div>
     </div>
 
-    <!-- RIGHT CHAT AREA -->
     <div class="chat-area mobile-hidden" id="chat-area">
       <div id="chat-placeholder" class="centered-container">
         <p>Select a friend to start chatting</p>
       </div>
       
       <div id="active-chat" class="chat-window hidden">
-        <!-- CHAT HEADER -->
         <div class="chat-header">
           <div style="display: flex; align-items: center; gap: 10px; flex: 1;">
             <button id="back-btn" onclick="toggleSidebar(true)" class="btn-back">⬅</button>
@@ -82,10 +99,8 @@
           </div>
         </div>
         
-        <!-- MESSAGES CONTAINER -->
         <div id="messages-display" class="messages-container"></div>
         
-        <!-- QUOTE REPLY BAR PREVIEW -->
         <div id="reply-preview-bar" class="reply-preview-bar hidden">
           <div style="flex:1;">
             <span style="font-size:11px; font-weight:bold; color:#00a884;">Replying to:</span>
@@ -94,7 +109,6 @@
           <button onclick="cancelReply()" style="background:transparent; border:none; font-size:16px; cursor:pointer; color:var(--text-secondary);">✕</button>
         </div>
 
-        <!-- INPUT TOOLBAR -->
         <div class="chat-input-area">
           <input type="file" id="file-input" style="display: none;" onchange="handleFileSelect(this)">
           <button class="attach-btn" onclick="document.getElementById('file-input').click()" title="Attach file">📎</button>
