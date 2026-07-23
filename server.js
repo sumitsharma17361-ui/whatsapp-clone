@@ -126,7 +126,6 @@ app.get('/api/messages/:friendId', auth, async (req, res) => {
   res.json(messages);
 });
 
-// CLEAR FULL CHAT API ENDPOINT
 app.delete('/api/messages/clear/:friendId', auth, async (req, res) => {
   try {
     await Message.deleteMany({
@@ -159,15 +158,23 @@ io.on('connection', (socket) => {
       isEncrypted: data.isEncrypted || false
     });
     await msg.save();
-    io.to(data.receiverId).emit('receiveMessage', msg);
-    io.to(data.senderId).emit('receiveMessage', msg);
+    
+    const msgDataToSend = msg.toObject();
+    if(data.replyTo) msgDataToSend.replyTo = data.replyTo;
+
+    io.to(data.receiverId).emit('receiveMessage', msgDataToSend);
+    io.to(data.senderId).emit('receiveMessage', msgDataToSend);
   });
 
   socket.on('typing', ({ receiverId, isTyping }) => {
     io.to(receiverId).emit('typingEmit', { senderId: currentUserId, isTyping });
   });
 
-  // REAL-TIME DELETE MESSAGE LISTENER
+  socket.on('reactionEmit', ({ msgId, emoji, receiverId }) => {
+    io.to(receiverId).emit('reactionReceived', { msgId, emoji });
+    io.to(currentUserId).emit('reactionReceived', { msgId, emoji });
+  });
+
   socket.on('deleteMsgEmit', async ({ msgId, receiverId }) => {
     try {
       await Message.findByIdAndUpdate(msgId, { text: '🚫 This message was deleted', fileUrl: null, fileName: null, fileType: null, isEncrypted: false });
@@ -178,7 +185,6 @@ io.on('connection', (socket) => {
     }
   });
 
-  // REAL-TIME CLEAR FULL CHAT SOCKET EVENT
   socket.on('clearChatEmit', ({ receiverId }) => {
     io.to(receiverId).emit('chatClearedEvent');
   });
