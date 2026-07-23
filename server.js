@@ -26,9 +26,10 @@ app.use(express.json({ limit: '100mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 mongoose.connect(process.env.MONGODB_URI)
-  .then(() => console.log('MongoDB Connected'))
+  .then(() => console.log('MongoDB Connected (50+ Features Engine Ready)'))
   .catch(err => console.error('DB Connection Error:', err));
 
+// 1. FILE & MEDIA UPLOAD
 app.post('/api/upload', async (req, res) => {
   try {
     const { fileName, fileData } = req.body;
@@ -43,6 +44,7 @@ app.post('/api/upload', async (req, res) => {
   } catch (err) { res.status(500).json({ error: 'Upload failed' }); }
 });
 
+// 2. PROFILE PICTURE UPDATE
 app.post('/api/profile-pic', async (req, res) => {
   try {
     const authHeader = req.headers['authorization'];
@@ -52,6 +54,7 @@ app.post('/api/profile-pic', async (req, res) => {
   } catch (err) { res.status(500).json({ error: "Failed" }); }
 });
 
+// 3. AUTHENTICATION (Register & Login)
 app.post('/api/register', async (req, res) => {
   try {
     const { username, password } = req.body;
@@ -82,6 +85,7 @@ const auth = (req, res, next) => {
   });
 };
 
+// 4. FRIEND REQUESTS SYSTEM
 app.post('/api/friend-request', auth, async (req, res) => {
   const { targetUsername } = req.body;
   const targetUser = await User.findOne({ username: targetUsername });
@@ -114,6 +118,7 @@ app.post('/api/accept-request', auth, async (req, res) => {
   res.json({ message: 'Accepted' });
 });
 
+// 5. MESSAGES RETRIEVAL & UNREAD MARKS
 app.get('/api/messages/:friendId', auth, async (req, res) => {
   await Message.updateMany(
     { sender: req.params.friendId, receiver: req.user.userId, status: { $ne: 'read' } },
@@ -121,11 +126,15 @@ app.get('/api/messages/:friendId', auth, async (req, res) => {
   );
   io.to(req.params.friendId).emit('messagesMarkedRead', { by: req.user.userId });
   const messages = await Message.find({
-    $or: [{ sender: req.user.userId, receiver: req.params.friendId }, { sender: req.params.friendId, receiver: req.user.userId }]
+    $or: [
+      { sender: req.user.userId, receiver: req.params.friendId },
+      { sender: req.params.friendId, receiver: req.user.userId }
+    ]
   }).sort('timestamp');
   res.json(messages);
 });
 
+// 6. CLEAR FULL CHAT ENDPOINT
 app.delete('/api/messages/clear/:friendId', auth, async (req, res) => {
   try {
     await Message.deleteMany({
@@ -140,9 +149,11 @@ app.delete('/api/messages/clear/:friendId', auth, async (req, res) => {
   }
 });
 
+// 7. SOCKET.IO REAL-TIME EVENT ENGINE (50+ FEATURES)
 const onlineUsers = new Map();
 io.on('connection', (socket) => {
   let currentUserId = null;
+
   socket.on('identify', async (userId) => {
     currentUserId = userId; onlineUsers.set(userId, socket.id); socket.join(userId);
     await User.findByIdAndUpdate(userId, { isOnline: true });
@@ -152,8 +163,12 @@ io.on('connection', (socket) => {
   socket.on('sendMessage', async (data) => {
     const receiverOnline = onlineUsers.has(data.receiverId);
     const msg = new Message({ 
-      sender: data.senderId, receiver: data.receiverId, 
-      text: data.text, fileUrl: data.fileUrl, fileName: data.fileName, fileType: data.fileType,
+      sender: data.senderId, 
+      receiver: data.receiverId, 
+      text: data.text, 
+      fileUrl: data.fileUrl, 
+      fileName: data.fileName, 
+      fileType: data.fileType,
       status: receiverOnline ? 'delivered' : 'sent',
       isEncrypted: data.isEncrypted || false
     });
@@ -170,14 +185,23 @@ io.on('connection', (socket) => {
     io.to(receiverId).emit('typingEmit', { senderId: currentUserId, isTyping });
   });
 
-  socket.on('reactionEmit', ({ msgId, emoji, receiverId }) => {
-    io.to(receiverId).emit('reactionReceived', { msgId, emoji });
-    io.to(currentUserId).emit('reactionReceived', { msgId, emoji });
+  socket.on('reactionEmit', async ({ msgId, emoji, receiverId }) => {
+    try {
+      await Message.findByIdAndUpdate(msgId, { reaction: emoji });
+      io.to(receiverId).emit('reactionReceived', { msgId, emoji });
+      io.to(currentUserId).emit('reactionReceived', { msgId, emoji });
+    } catch(e){}
   });
 
   socket.on('deleteMsgEmit', async ({ msgId, receiverId }) => {
     try {
-      await Message.findByIdAndUpdate(msgId, { text: '🚫 This message was deleted', fileUrl: null, fileName: null, fileType: null, isEncrypted: false });
+      await Message.findByIdAndUpdate(msgId, { 
+        text: '🚫 This message was deleted', 
+        fileUrl: null, 
+        fileName: null, 
+        fileType: null, 
+        isEncrypted: false 
+      });
       io.to(receiverId).emit('msgDeleted', { msgId });
       io.to(currentUserId).emit('msgDeleted', { msgId });
     } catch(err) {
