@@ -128,6 +128,12 @@ function showDashboard() {
     }
   });
 
+  // REAL-TIME CLEAR CHAT EVENT
+  socket.on('chatClearedEvent', () => {
+    const display = document.getElementById('messages-display');
+    if (display) display.innerHTML = '';
+  });
+
   socket.on('statusChanged', ({ userId: changedId, isOnline, lastSeen }) => {
     loadDashboardData();
     if (String(activeFriendId) === String(changedId)) {
@@ -243,6 +249,23 @@ function searchInChat(query) {
     if(query && m.innerText.toLowerCase().includes(query.toLowerCase())) m.classList.add('highlight');
     else m.classList.remove('highlight');
   });
+}
+
+async function clearFullChat() {
+  if (!activeFriendId) return;
+  if (confirm("Are you sure you want to clear this entire chat?")) {
+    try {
+      const res = await fetch(`/api/messages/clear/${activeFriendId}`, {
+        method: 'DELETE',
+        headers: headers()
+      });
+      const data = await res.json();
+      if (data.message) {
+        document.getElementById('messages-display').innerHTML = '';
+        socket.emit('clearChatEmit', { receiverId: activeFriendId });
+      } else { alert("Failed to clear chat"); }
+    } catch(err) { alert("Error clearing chat"); }
+  }
 }
 
 function setupMic() {
