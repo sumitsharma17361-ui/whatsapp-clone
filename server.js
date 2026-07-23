@@ -10,6 +10,7 @@ const fs = require('fs');
 
 const User = require('./models/User');
 const Message = require('./models/Message');
+const Status = require('./models/Status');
 
 const app = express();
 const server = http.createServer(app);
@@ -26,10 +27,9 @@ app.use(express.json({ limit: '100mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 mongoose.connect(process.env.MONGODB_URI)
-  .then(() => console.log('MongoDB Connected (50+ Features Engine Ready)'))
+  .then(() => console.log('MongoDB Connected (Status & Chat Engine Ready)'))
   .catch(err => console.error('DB Connection Error:', err));
 
-// 1. FILE & MEDIA UPLOAD
 app.post('/api/upload', async (req, res) => {
   try {
     const { fileName, fileData } = req.body;
@@ -44,7 +44,6 @@ app.post('/api/upload', async (req, res) => {
   } catch (err) { res.status(500).json({ error: 'Upload failed' }); }
 });
 
-// 2. PROFILE PICTURE UPDATE
 app.post('/api/profile-pic', async (req, res) => {
   try {
     const authHeader = req.headers['authorization'];
@@ -54,7 +53,6 @@ app.post('/api/profile-pic', async (req, res) => {
   } catch (err) { res.status(500).json({ error: "Failed" }); }
 });
 
-// 3. AUTHENTICATION (Register & Login)
 app.post('/api/register', async (req, res) => {
   try {
     const { username, password } = req.body;
@@ -85,7 +83,6 @@ const auth = (req, res, next) => {
   });
 };
 
-// 4. FRIEND REQUESTS SYSTEM
 app.post('/api/friend-request', auth, async (req, res) => {
   const { targetUsername } = req.body;
   const targetUser = await User.findOne({ username: targetUsername });
@@ -118,7 +115,35 @@ app.post('/api/accept-request', auth, async (req, res) => {
   res.json({ message: 'Accepted' });
 });
 
-// 5. MESSAGES RETRIEVAL & UNREAD MARKS
+// STATUS APIs
+app.post('/api/status', auth, async (req, res) => {
+  try {
+    const { mediaUrl, mediaType, text, bgColor } = req.body;
+    const status = new Status({ user: req.user.userId, mediaUrl, mediaType, text, bgColor });
+    await status.save();
+    io.emit('statusUpdated');
+    res.status(201).json({ message: 'Status uploaded' });
+  } catch (err) { res.status(500).json({ error: 'Failed' }); }
+});
+
+app.get('/api/status', auth, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.userId);
+    const visibleUserIds = [...user.friends, req.user.userId];
+    const statuses = await Status.find({ user: { $in: visibleUserIds } })
+      .populate('user', 'username profilePic')
+      .sort('-createdAt');
+    res.json(statuses);
+  } catch (err) { res.status(500).json({ error: 'Failed' }); }
+});
+
+app.post('/api/status/view/:statusId', auth, async (req, res) => {
+  try {
+    await Status.findByIdAndUpdate(req.params.statusId, { $addToSet: { viewers: req.user.userId } });
+    res.json({ message: 'Viewed' });
+  } catch (err) { res.status(500).json({ error: 'Failed' }); }
+});
+
 app.get('/api/messages/:friendId', auth, async (req, res) => {
   await Message.updateMany(
     { sender: req.params.friendId, receiver: req.user.userId, status: { $ne: 'read' } },
@@ -126,34 +151,23 @@ app.get('/api/messages/:friendId', auth, async (req, res) => {
   );
   io.to(req.params.friendId).emit('messagesMarkedRead', { by: req.user.userId });
   const messages = await Message.find({
-    $or: [
-      { sender: req.user.userId, receiver: req.params.friendId },
-      { sender: req.params.friendId, receiver: req.user.userId }
-    ]
+    $or: [{ sender: req.user.userId, receiver: req.params.friendId }, { sender: req.params.friendId, receiver: req.user.userId }]
   }).sort('timestamp');
   res.json(messages);
 });
 
-// 6. CLEAR FULL CHAT ENDPOINT
 app.delete('/api/messages/clear/:friendId', auth, async (req, res) => {
   try {
     await Message.deleteMany({
-      $or: [
-        { sender: req.user.userId, receiver: req.params.friendId },
-        { sender: req.params.friendId, receiver: req.user.userId }
-      ]
+      $or: [{ sender: req.user.userId, receiver: req.params.friendId }, { sender: req.params.friendId, receiver: req.user.userId }]
     });
     res.json({ message: 'Chat cleared successfully' });
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to clear chat' });
-  }
+  } catch (err) { res.status(500).json({ error: 'Failed' }); }
 });
 
-// 7. SOCKET.IO REAL-TIME EVENT ENGINE (50+ FEATURES)
 const onlineUsers = new Map();
 io.on('connection', (socket) => {
   let currentUserId = null;
-
   socket.on('identify', async (userId) => {
     currentUserId = userId; onlineUsers.set(userId, socket.id); socket.join(userId);
     await User.findByIdAndUpdate(userId, { isOnline: true });
@@ -163,17 +177,11 @@ io.on('connection', (socket) => {
   socket.on('sendMessage', async (data) => {
     const receiverOnline = onlineUsers.has(data.receiverId);
     const msg = new Message({ 
-      sender: data.senderId, 
-      receiver: data.receiverId, 
-      text: data.text, 
-      fileUrl: data.fileUrl, 
-      fileName: data.fileName, 
-      fileType: data.fileType,
-      status: receiverOnline ? 'delivered' : 'sent',
-      isEncrypted: data.isEncrypted || false
+      sender: data.senderId, receiver: data.receiverId, 
+      text: data.text, fileUrl: data.fileUrl, fileName: data.fileName, fileType: data.fileType,
+      status: receiverOnline ? 'delivered' : 'sent', isEncrypted: data.isEncrypted || false
     });
     await msg.save();
-    
     const msgDataToSend = msg.toObject();
     if(data.replyTo) msgDataToSend.replyTo = data.replyTo;
 
@@ -186,27 +194,15 @@ io.on('connection', (socket) => {
   });
 
   socket.on('reactionEmit', async ({ msgId, emoji, receiverId }) => {
-    try {
-      await Message.findByIdAndUpdate(msgId, { reaction: emoji });
-      io.to(receiverId).emit('reactionReceived', { msgId, emoji });
-      io.to(currentUserId).emit('reactionReceived', { msgId, emoji });
-    } catch(e){}
+    await Message.findByIdAndUpdate(msgId, { reaction: emoji });
+    io.to(receiverId).emit('reactionReceived', { msgId, emoji });
+    io.to(currentUserId).emit('reactionReceived', { msgId, emoji });
   });
 
   socket.on('deleteMsgEmit', async ({ msgId, receiverId }) => {
-    try {
-      await Message.findByIdAndUpdate(msgId, { 
-        text: '🚫 This message was deleted', 
-        fileUrl: null, 
-        fileName: null, 
-        fileType: null, 
-        isEncrypted: false 
-      });
-      io.to(receiverId).emit('msgDeleted', { msgId });
-      io.to(currentUserId).emit('msgDeleted', { msgId });
-    } catch(err) {
-      console.log('Delete error:', err);
-    }
+    await Message.findByIdAndUpdate(msgId, { text: '🚫 This message was deleted', fileUrl: null, fileName: null, fileType: null, isEncrypted: false });
+    io.to(receiverId).emit('msgDeleted', { msgId });
+    io.to(currentUserId).emit('msgDeleted', { msgId });
   });
 
   socket.on('clearChatEmit', ({ receiverId }) => {
