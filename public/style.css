@@ -1,46 +1,13 @@
-* { 
-  box-sizing: border-box; 
-  margin: 0; 
-  padding: 0; 
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; 
-  transition: background-color 0.2s, color 0.2s; 
-}
+* { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; transition: background-color 0.2s, color 0.2s; }
 html, body { height: 100%; width: 100%; overflow: hidden; }
 
 .hidden { display: none !important; }
 
-/* THEME MANAGEMENT VARIABLES */
-body.light-theme { 
-  --bg-main: #eef1f4; 
-  --card-bg: #ffffff; 
-  --sidebar-bg: #ffffff; 
-  --header-bg: #f0f2f5; 
-  --text-primary: #111b21; 
-  --text-secondary: #667781; 
-  --chat-bg: #efeae2; 
-  --chat-pattern: #d1c7bd; 
-  --msg-sent: #d9fdd3; 
-  --msg-recv: #ffffff; 
-  --border-color: #e9edef; 
-}
-
-body.dark-theme { 
-  --bg-main: #0b141a; 
-  --card-bg: #111b21; 
-  --sidebar-bg: #111b21; 
-  --header-bg: #202c33; 
-  --text-primary: #e9edef; 
-  --text-secondary: #8696a0; 
-  --chat-bg: #0b141a; 
-  --chat-pattern: #1f2c34; 
-  --msg-sent: #005c4b; 
-  --msg-recv: #202c33; 
-  --border-color: #222d34; 
-}
+body.light-theme { --bg-main: #eef1f4; --card-bg: #ffffff; --sidebar-bg: #ffffff; --header-bg: #f0f2f5; --text-primary: #111b21; --text-secondary: #667781; --chat-bg: #efeae2; --chat-pattern: #d1c7bd; --msg-sent: #d9fdd3; --msg-recv: #ffffff; --border-color: #e9edef; }
+body.dark-theme { --bg-main: #0b141a; --card-bg: #111b21; --sidebar-bg: #111b21; --header-bg: #202c33; --text-primary: #e9edef; --text-secondary: #8696a0; --chat-bg: #0b141a; --chat-pattern: #1f2c34; --msg-sent: #005c4b; --msg-recv: #202c33; --border-color: #222d34; }
 
 body { background-color: var(--bg-main); color: var(--text-primary); }
 
-/* AUTHENTICATION UI */
 .centered-container { display: flex; justify-content: center; align-items: center; height: 100%; width: 100%; background: var(--bg-main); }
 .card { background: var(--card-bg); padding: 35px 30px; border-radius: 16px; width: 340px; box-shadow: 0 10px 25px rgba(0,0,0,0.15); text-align: center; }
 .auth-title { color: #00a884; font-size: 26px; font-weight: 700; margin-bottom: 25px; }
@@ -48,10 +15,8 @@ body { background-color: var(--bg-main); color: var(--text-primary); }
 .btn-primary { background: #00a884; color: white; border: none; padding: 12px; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 15px; }
 .btn-secondary { background: #6c757d; color: white; border: none; padding: 12px; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 15px; }
 
-/* APP LAYOUT */
 .app-container { display: flex; width: 100%; height: 100%; background: var(--card-bg); overflow: hidden; }
 
-/* SIDEBAR UI */
 .sidebar { width: 350px; background: var(--sidebar-bg); border-right: 1px solid var(--border-color); display: flex; flex-direction: column; height: 100%; }
 .sidebar-header { display: flex; justify-content: space-between; align-items: center; padding: 10px 16px; background: var(--header-bg); border-bottom: 1px solid var(--border-color); flex-shrink: 0; }
 .profile-info { display: flex; align-items: center; gap: 12px; }
@@ -72,7 +37,12 @@ body { background-color: var(--bg-main); color: var(--text-primary); }
 .pin-icon { color: #00a884; margin-left: 6px; font-size: 12px; }
 .online-dot { width: 10px; height: 10px; background: #25d366; border-radius: 50%; position: absolute; bottom: 0; right: 0; border: 2px solid var(--sidebar-bg); }
 
-/* CHAT MAIN PANEL */
+.status-ring { border: 3px solid #00a884; padding: 2px; border-radius: 50%; }
+.status-story-modal { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: #000; z-index: 2000; display: flex; flex-direction: column; align-items: center; justify-content: center; color: #fff; }
+.status-progress-bar { position: absolute; top: 15px; left: 20px; right: 20px; height: 3px; background: rgba(255,255,255,0.3); border-radius: 2px; overflow: hidden; }
+.status-progress-fill { width: 100%; height: 100%; background: #fff; animation: statusProgress 5s linear forwards; }
+@keyframes statusProgress { from { width: 0%; } to { width: 100%; } }
+
 .chat-area { flex: 1; display: flex; flex-direction: column; background: var(--chat-bg); height: 100%; position: relative; overflow: hidden; }
 .chat-window { display: flex; flex-direction: column; height: 100%; width: 100%; }
 
@@ -87,7 +57,6 @@ body { background-color: var(--bg-main); color: var(--text-primary); }
 .chat-search-input { padding: 6px 12px; border-radius: 16px; border: 1px solid var(--border-color); outline: none; font-size: 13px; background: var(--card-bg); color: var(--text-primary); }
 .icon-btn { background: transparent; border: none; font-size: 18px; cursor: pointer; color: var(--text-secondary); }
 
-/* CHAT BUBBLES & SCROLL VIEW */
 .messages-container { flex: 1; padding: 16px; overflow-y: auto; background-color: var(--chat-bg); background-image: radial-gradient(var(--chat-pattern) 1px, transparent 1px); background-size: 16px 16px; display: flex; flex-direction: column; gap: 6px; }
 
 .msg { max-width: 75%; padding: 8px 12px; border-radius: 8px; font-size: 14px; word-wrap: break-word; box-shadow: 0 1px 1px rgba(0,0,0,0.1); position: relative; }
@@ -98,7 +67,6 @@ body { background-color: var(--bg-main); color: var(--text-primary); }
 .msg-del-btn { display: none; position: absolute; top: 4px; right: 4px; background: rgba(0,0,0,0.1); border: none; border-radius: 50%; width: 18px; height: 18px; font-size: 10px; cursor: pointer; color: var(--text-primary); }
 .msg:hover .msg-del-btn { display: flex; align-items: center; justify-content: center; }
 
-/* EMOJI & REPLY STYLING */
 .msg-action-row { display: flex; align-items: center; justify-content: space-between; margin-top: 6px; padding-top: 4px; border-top: 1px solid rgba(0,0,0,0.05); font-size: 12px; }
 .reply-action-btn { color: #00a884; cursor: pointer; font-weight: 600; }
 .emoji-picker-inline { display: flex; gap: 6px; background: rgba(255,255,255,0.7); padding: 2px 6px; border-radius: 12px; cursor: pointer; }
@@ -106,19 +74,16 @@ body { background-color: var(--bg-main); color: var(--text-primary); }
 .reaction-badge { display: inline-block; background: #ffffff; border: 1px solid #e9edef; padding: 2px 6px; border-radius: 10px; font-size: 12px; margin-top: 4px; }
 .quoted-reply-box { background: rgba(0, 168, 132, 0.1); border-left: 3px solid #00a884; padding: 4px 8px; font-size: 12px; border-radius: 4px; margin-bottom: 4px; }
 
-/* FOOTER TOOLBAR */
 .reply-preview-bar { display: flex; align-items: center; justify-content: space-between; padding: 8px 16px; background: var(--header-bg); border-top: 1px solid var(--border-color); }
 .chat-input-area { display: flex; align-items: center; padding: 8px 10px; background: var(--header-bg); gap: 6px; flex-shrink: 0; height: 62px; width: 100%; border-top: 1px solid var(--border-color); }
 .attach-btn, .mic-btn { background: transparent; border: none; font-size: 20px; cursor: pointer; color: var(--text-secondary); display: flex; align-items: center; justify-content: center; padding: 2px; flex-shrink: 0; }
 #message-input { flex: 1; min-width: 0; padding: 10px 14px; border-radius: 20px; border: 1px solid var(--border-color); outline: none; background: var(--card-bg); font-size: 14px; color: var(--text-primary); }
 .send-btn { background: #00a884; color: white; border: none; width: 40px; height: 40px; border-radius: 50%; font-weight: bold; cursor: pointer; font-size: 16px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; margin-right: 2px; }
 
-/* LIGHTBOX MODAL */
 .modal-overlay { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.85); display: flex; align-items: center; justify-content: center; z-index: 1000; }
 .modal-content { max-width: 90%; max-height: 90%; border-radius: 8px; }
 .modal-close { position: absolute; top: 20px; right: 30px; color: white; font-size: 35px; cursor: pointer; }
 
-/* RESPONSIVE LAYOUT */
 @media(max-width: 768px) {
   .sidebar { width: 100vw; }
   .chat-area { position: fixed; top: 0; left: 0; width: 100vw; height: 100%; z-index: 10; }
