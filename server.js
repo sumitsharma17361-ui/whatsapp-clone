@@ -126,6 +126,21 @@ app.get('/api/messages/:friendId', auth, async (req, res) => {
   res.json(messages);
 });
 
+// CLEAR FULL CHAT API ENDPOINT
+app.delete('/api/messages/clear/:friendId', auth, async (req, res) => {
+  try {
+    await Message.deleteMany({
+      $or: [
+        { sender: req.user.userId, receiver: req.params.friendId },
+        { sender: req.params.friendId, receiver: req.user.userId }
+      ]
+    });
+    res.json({ message: 'Chat cleared successfully' });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to clear chat' });
+  }
+});
+
 const onlineUsers = new Map();
 io.on('connection', (socket) => {
   let currentUserId = null;
@@ -152,7 +167,7 @@ io.on('connection', (socket) => {
     io.to(receiverId).emit('typingEmit', { senderId: currentUserId, isTyping });
   });
 
-  // REAL-TIME DELETE FOR EVERYONE EVENT LISTENER
+  // REAL-TIME DELETE MESSAGE LISTENER
   socket.on('deleteMsgEmit', async ({ msgId, receiverId }) => {
     try {
       await Message.findByIdAndUpdate(msgId, { text: '🚫 This message was deleted', fileUrl: null, fileName: null, fileType: null, isEncrypted: false });
@@ -161,6 +176,11 @@ io.on('connection', (socket) => {
     } catch(err) {
       console.log('Delete error:', err);
     }
+  });
+
+  // REAL-TIME CLEAR FULL CHAT SOCKET EVENT
+  socket.on('clearChatEmit', ({ receiverId }) => {
+    io.to(receiverId).emit('chatClearedEvent');
   });
 
   socket.on('readEmit', async ({ msgId, senderId }) => {
