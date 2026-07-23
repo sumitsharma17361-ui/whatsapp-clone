@@ -8,6 +8,9 @@ let selectedFile = null;
 let mediaRecorder;
 let audioChunks = [];
 let isRecording = false;
+let typingTimeout = null;
+
+let pinnedFriends = JSON.parse(localStorage.getItem('pinnedFriends') || '[]');
 
 const mockEncryptionKey = "WhatsAppLiteSecretKey12345"; 
 
@@ -24,7 +27,23 @@ window.onload = () => {
     }
   }
   setupMic();
+  if(localStorage.getItem('theme') === 'dark') {
+    document.body.classList.remove('light-theme');
+    document.body.classList.add('dark-theme');
+  }
 };
+
+function toggleTheme() {
+  if(document.body.classList.contains('dark-theme')) {
+    document.body.classList.remove('dark-theme');
+    document.body.classList.add('light-theme');
+    localStorage.setItem('theme', 'light');
+  } else {
+    document.body.classList.remove('light-theme');
+    document.body.classList.add('dark-theme');
+    localStorage.setItem('theme', 'dark');
+  }
+}
 
 function toggleSidebar(show) {
   const sidebar = document.getElementById('sidebar');
@@ -38,14 +57,11 @@ function toggleSidebar(show) {
 async function authAction(type) {
   const u = document.getElementById('auth-username').value.trim();
   const p = document.getElementById('auth-password').value.trim();
-
   if(!u || !p) return alert("Please fill username and password");
 
   const endpoint = type === 'login' ? '/api/login' : '/api/register';
-
   const res = await fetch(endpoint, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ username: u, password: p })
   });
   const data = await res.json();
@@ -57,9 +73,7 @@ async function authAction(type) {
     localStorage.setItem('username', data.username);
     if(data.profilePic) localStorage.setItem('profilePic', data.profilePic);
     window.location.reload();
-  } else {
-    alert('Registered successfully! Now click Login.');
-  }
+  } else { alert('Registered successfully! Now click Login.'); }
 }
 
 async function uploadProfilePic(input) {
@@ -71,8 +85,7 @@ async function uploadProfilePic(input) {
     document.getElementById('my-avatar').src = base64;
     localStorage.setItem('profilePic', base64);
     await fetch('/api/profile-pic', {
-      method: 'POST',
-      headers: headers(),
+      method: 'POST', headers: headers(),
       body: JSON.stringify({ profilePic: base64 })
     });
   };
@@ -90,34 +103,26 @@ function showDashboard() {
   socket.on('receiveMessage', (msg) => {
     const msgSender = String(msg.sender._id || msg.sender);
     const msgReceiver = String(msg.receiver._id || msg.receiver);
-    
     if (activeFriendId && (msgSender === String(activeFriendId) || msgReceiver === String(activeFriendId))) {
       const tempBubble = document.getElementById(`temp-${msg.timestamp}`);
       if (tempBubble) tempBubble.remove();
-      
-      if (msg.text && msg.isEncrypted) {
-         msg.text = decryptText(msg.text, mockEncryptionKey);
-      }
+      if (msg.text && msg.isEncrypted) msg.text = decryptText(msg.text, mockEncryptionKey);
       renderSingleMessage(msg);
       if(msgSender === String(activeFriendId)) socket.emit('readEmit', { msgId: msg._id, senderId: msgSender });
     }
   });
 
-  socket.on('msgStatusUpdate', ({ msgId, status }) => {
-     const tickEl = document.getElementById(`tick-${msgId}`);
-     if(tickEl) {
-        tickEl.innerHTML = '✓✓';
-        if(status === 'read') tickEl.style.color = '#53bdeb'; 
-     }
+  socket.on('typingEmit', ({ senderId, isTyping }) => {
+    if (String(activeFriendId) === String(senderId)) {
+      const el = document.getElementById('active-friend-status');
+      if (isTyping) el.innerText = 'typing...';
+      else el.innerText = 'Online';
+    }
   });
 
-  socket.on('messagesMarkedRead', ({ by }) => {
-     if(String(by) === String(activeFriendId)) {
-        document.querySelectorAll('.tick-status').forEach(el => {
-           el.innerHTML = '✓✓';
-           el.style.color = '#53bdeb';
-        });
-     }
+  socket.on('msgDeleted', ({ msgId }) => {
+    const el = document.getElementById(`msg-${msgId}`);
+    if (el) el.innerHTML = '<p style="font-style:italic; color:#8696a0;">🚫 This message was deleted</p>';
   });
 
   socket.on('statusChanged', ({ userId: changedId, isOnline, lastSeen }) => {
@@ -132,8 +137,26 @@ function showDashboard() {
 }
 
 function encryptText(text, key) { return btoa(encodeURIComponent(text)); }
-function decryptText(encodedText, key) {
-  try { return decodeURIComponent(atob(encodedText)); } catch(e) { return "🔒 Decryption Failed"; }
+function decryptText(encodedText, key) { try { return decodeURIComponent(atob(encodedText)); } catch(e) { return "🔒 Decryption Failed"; } }
+
+function handleTyping() {
+  if (!activeFriendId) return;
+  socket.emit('typing', { receiverId: activeFriendId, isTyping: true });
+  clearTimeout(typingTimeout);
+  typingTimeout = setTimeout(() => {
+    socket.emit('typing', { receiverId: activeFriendId, isTyping: false });
+  }, 1500);
+}
+
+function togglePinFriend(e, friendId) {
+  e.stopPropagation();
+  if (pinnedFriends.includes(friendId)) {
+    pinnedFriends = pinnedFriends.filter(id => id !== friendId);
+  } else {
+    pinnedFriends.push(friendId);
+  }
+  localStorage.setItem('pinnedFriends', JSON.stringify(pinnedFriends));
+  loadDashboardData();
 }
 
 async function loadDashboardData() {
@@ -148,27 +171,33 @@ async function loadDashboardData() {
 
   const friendsList = document.getElementById('friends-list');
   friendsList.innerHTML = '';
-  (data.friends || []).forEach(f => {
+  
+  let sortedFriends = (data.friends || []).sort((a, b) => {
+    const isAPinned = pinnedFriends.includes(a._id);
+    const isBPinned = pinnedFriends.includes(b._id);
+    return isBPinned - isAPinned;
+  });
+
+  sortedFriends.forEach(f => {
     const avatar = f.profilePic || 'https://www.w3schools.com/howto/img_avatar.png';
-    const statusText = f.isOnline ? 'Online' : 'Offline';
+    const isPinned = pinnedFriends.includes(f._id);
     friendsList.innerHTML += `
       <div class="list-item" onclick="openChat('${f._id}', '${f.username}', ${f.isOnline}, '${avatar}', '${f.lastSeen}')">
         <div style="display:flex; align-items:center; gap:10px;">
           <img src="${avatar}" style="width:36px; height:36px; border-radius:50%; object-fit:cover;">
-          <span style="font-weight:600; color:#111b21;">${f.username}</span>
+          <span style="font-weight:600;">${f.username} ${isPinned ? '<span class="pin-icon">📌</span>':''}</span>
         </div>
-        <span id="status-${f._id}" style="font-size:12px; color:${f.isOnline ? '#25d366':'#8696a0'}">${statusText}</span>
+        <div style="display:flex; align-items:center; gap:8px;">
+          <span id="status-${f._id}" style="font-size:12px; color:${f.isOnline ? '#25d366':'#8696a0'}">${f.isOnline ? 'Online':'Offline'}</span>
+          <span onclick="togglePinFriend(event, '${f._id}')" style="cursor:pointer; font-size:14px;" title="Pin Chat">${isPinned ? '📍':'📌'}</span>
+        </div>
       </div>`;
   });
 }
 
 async function sendFriendRequest() {
   const target = document.getElementById('target-username').value;
-  const res = await fetch('/api/friend-request', {
-    method: 'POST',
-    headers: headers(),
-    body: JSON.stringify({ targetUsername: target })
-  });
+  const res = await fetch('/api/friend-request', { method: 'POST', headers: headers(), body: JSON.stringify({ targetUsername: target }) });
   const data = await res.json();
   alert(data.message || data.error);
   document.getElementById('target-username').value = '';
@@ -186,7 +215,6 @@ async function openChat(friendId, friendName, isOnline, avatar, lastSeen) {
   document.getElementById('active-chat').classList.remove('hidden');
   document.getElementById('active-friend-name').innerText = friendName;
   document.getElementById('active-friend-avatar').src = avatar;
-  
   document.getElementById('active-friend-status').innerText = isOnline ? 'Online' : `Last seen: ${new Date(lastSeen).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`;
 
   const res = await fetch(`/api/messages/${friendId}`, { headers: headers() });
@@ -200,16 +228,28 @@ async function openChat(friendId, friendName, isOnline, avatar, lastSeen) {
   });
 }
 
+function toggleInChatSearch() {
+  const el = document.getElementById('in-chat-search');
+  el.classList.toggle('hidden');
+  if(!el.classList.contains('hidden')) el.focus();
+}
+
+function searchInChat(query) {
+  const msgs = document.querySelectorAll('.msg');
+  msgs.forEach(m => {
+    if(query && m.innerText.toLowerCase().includes(query.toLowerCase())) m.classList.add('highlight');
+    else m.classList.remove('highlight');
+  });
+}
+
 function setupMic() {
   const micBtn = document.getElementById('mic-btn');
   if(!micBtn) return;
-  
   micBtn.onclick = async () => {
     if (!isRecording) {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       mediaRecorder = new MediaRecorder(stream);
       audioChunks = [];
-      
       mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
       mediaRecorder.onstop = async () => {
         const audioBlob = new Blob(audioChunks, { type: 'audio/mp3' });
@@ -220,15 +260,8 @@ function setupMic() {
         };
         reader.readAsDataURL(audioBlob);
       };
-      
-      mediaRecorder.start();
-      isRecording = true;
-      micBtn.innerText = "🛑";
-    } else {
-      mediaRecorder.stop();
-      isRecording = false;
-      micBtn.innerText = "🎙️";
-    }
+      mediaRecorder.start(); isRecording = true; micBtn.innerText = "🛑";
+    } else { mediaRecorder.stop(); isRecording = false; micBtn.innerText = "🎙️"; }
   };
 }
 
@@ -243,37 +276,35 @@ function handleFileSelect(input) {
   reader.readAsDataURL(file);
 }
 
+function deleteMessage(msgId) {
+  if(confirm("Delete this message for everyone?")) {
+    socket.emit('deleteMsgEmit', { msgId, receiverId: activeFriendId });
+  }
+}
+
 function renderSingleMessage(msg) {
   const display = document.getElementById('messages-display');
   const msgSenderId = String(msg.sender._id || msg.sender);
   const currentLoggedUserId = String(userId);
   const type = msgSenderId === currentLoggedUserId ? 'sent' : 'received';
   
-  let contentHtml = '<div class="media-box">';
-  
+  let contentHtml = `<div class="media-box" id="msg-${msg._id}">`;
+  if(type === 'sent') contentHtml += `<button class="msg-del-btn" onclick="deleteMessage('${msg._id}')">✕</button>`;
+
   if (msg.fileUrl) {
-      if (msg.fileType.startsWith('image/')) {
-          contentHtml += `<img src="${msg.fileUrl}">`;
-      } else if (msg.fileType.startsWith('video/')) {
-          contentHtml += `<video src="${msg.fileUrl}" controls></video>`;
-      } else if (msg.fileType.startsWith('audio/')) {
-          contentHtml += `<audio src="${msg.fileUrl}" controls style="max-width:100%;"></audio>`;
-      } else {
-          contentHtml += `<div style="padding:10px; background:#0000000d; border-radius:6px; margin-bottom:5px;">📄 ${msg.fileName}</div>`;
-      }
+      if (msg.fileType.startsWith('image/')) contentHtml += `<img src="${msg.fileUrl}">`;
+      else if (msg.fileType.startsWith('video/')) contentHtml += `<video src="${msg.fileUrl}" controls></video>`;
+      else if (msg.fileType.startsWith('audio/')) contentHtml += `<audio src="${msg.fileUrl}" controls style="max-width:100%;"></audio>`;
+      else contentHtml += `<div style="padding:10px; background:#0000000d; border-radius:6px; margin-bottom:5px;">📄 ${msg.fileName}</div>`;
       contentHtml += `<a href="${msg.fileUrl}" download="${msg.fileName}" style="color:#00a884; text-decoration:none; font-size:12px; font-weight:bold; display:block; margin-top:6px;">⬇ Download File</a>`;
   }
   
-  if (msg.text) {
-      contentHtml += `<p style="margin-top:4px;">${msg.text}</p>`;
-  }
+  if (msg.text) contentHtml += `<p style="margin-top:4px;">${msg.text}</p>`;
 
   if(type === 'sent') {
-     let tickSymbol = '✓';
-     let tickColor = '#8696a0';
+     let tickSymbol = '✓'; let tickColor = '#8696a0';
      if(msg.status === 'delivered' || msg.status === 'read') tickSymbol = '✓✓';
      if(msg.status === 'read') tickColor = '#53bdeb';
-     
      contentHtml += `<span class="tick-status" id="tick-${msg._id}" style="float:right; font-size:11px; margin-left:5px; color:${tickColor}; font-weight:bold;">${tickSymbol}</span>`;
   }
 
@@ -288,11 +319,7 @@ async function sendMessage() {
   if (!textToSend && !selectedFile) return;
 
   if (selectedFile) {
-    const filePayload = selectedFile;
-    selectedFile = null;
-    document.getElementById('file-input').value = "";
-    input.value = '';
-
+    const filePayload = selectedFile; selectedFile = null; document.getElementById('file-input').value = ""; input.value = '';
     if (textToSend.includes('(Ready)')) textToSend = "";
     const timestamp = Date.now();
     const display = document.getElementById('messages-display');
@@ -306,8 +333,7 @@ async function sendMessage() {
           </div>
           <span id="percent-${timestamp}" style="font-size:11px; color:#667781;">0%</span>
         </div>
-      </div>
-    `;
+      </div>`;
     display.scrollTop = display.scrollHeight;
 
     const xhr = new XMLHttpRequest();
@@ -329,33 +355,15 @@ async function sendMessage() {
         const response = JSON.parse(xhr.responseText);
         if (response.fileUrl) {
           let cipherText = textToSend ? encryptText(textToSend, mockEncryptionKey) : "";
-          socket.emit('sendMessage', { 
-              senderId: userId, 
-              receiverId: activeFriendId, 
-              text: cipherText,
-              fileUrl: response.fileUrl, 
-              fileName: filePayload.name,
-              fileType: filePayload.type,
-              timestamp: timestamp,
-              isEncrypted: true
-          });
+          socket.emit('sendMessage', { senderId: userId, receiverId: activeFriendId, text: cipherText, fileUrl: response.fileUrl, fileName: filePayload.name, fileType: filePayload.type, timestamp: timestamp, isEncrypted: true });
         }
-      } else {
-        alert("File upload failed.");
-        const temp = document.getElementById(`temp-${timestamp}`);
-        if(temp) temp.remove();
-      }
+      } else { alert("File upload failed."); const temp = document.getElementById(`temp-${timestamp}`); if(temp) temp.remove(); }
     };
     xhr.send(JSON.stringify({ fileName: filePayload.name, fileData: filePayload.data }));
 
   } else {
     let encryptedSecret = encryptText(textToSend, mockEncryptionKey);
-    socket.emit('sendMessage', { 
-       senderId: userId, 
-       receiverId: activeFriendId, 
-       text: encryptedSecret,
-       isEncrypted: true 
-    });
+    socket.emit('sendMessage', { senderId: userId, receiverId: activeFriendId, text: encryptedSecret, isEncrypted: true });
     input.value = '';
   }
 }
