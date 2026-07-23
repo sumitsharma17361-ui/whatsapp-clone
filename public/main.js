@@ -380,9 +380,10 @@ function renderSingleMessage(msg) {
   if (msg.text) contentHtml += `<p style="margin-top:4px;">${msg.text}</p>`;
 
   if (msg.text !== '🚫 This message was deleted') {
+    const cleanText = (msg.text || msg.fileName || 'Media').replace(/'/g, "\\'");
     contentHtml += `
       <div class="msg-action-row">
-        <span onclick="setReply('${msg.text || msg.fileName}')" class="reply-action-btn">↩ Reply</span>
+        <span onclick="setReply('${cleanText}')" class="reply-action-btn">↩ Reply</span>
         <div class="emoji-picker-inline">
           <span onclick="sendReaction('${msg._id}', '❤️')">❤️</span>
           <span onclick="sendReaction('${msg._id}', '👍')">👍</span>
