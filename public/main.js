@@ -57,6 +57,26 @@ function toggleSidebar(show) {
   }
 }
 
+function switchTab(tab) {
+  const chatsBtn = document.getElementById('tab-chats-btn');
+  const statusBtn = document.getElementById('tab-status-btn');
+  const friendsList = document.getElementById('friends-list');
+  const statusView = document.getElementById('status-view-container');
+
+  if(tab === 'chats') {
+    chatsBtn.style.color = 'var(--text-primary)'; chatsBtn.style.borderBottom = '2px solid #00a884';
+    statusBtn.style.color = 'var(--text-secondary)'; statusBtn.style.borderBottom = 'none';
+    friendsList.classList.remove('hidden');
+    statusView.classList.add('hidden');
+  } else {
+    statusBtn.style.color = 'var(--text-primary)'; statusBtn.style.borderBottom = '2px solid #00a884';
+    chatsBtn.style.color = 'var(--text-secondary)'; chatsBtn.style.borderBottom = 'none';
+    friendsList.classList.add('hidden');
+    statusView.classList.remove('hidden');
+    loadStatuses();
+  }
+}
+
 async function authAction(type) {
   const u = document.getElementById('auth-username').value.trim();
   const p = document.getElementById('auth-password').value.trim();
@@ -148,6 +168,10 @@ function showDashboard() {
     if (display) display.innerHTML = '';
   });
 
+  socket.on('statusUpdated', () => {
+    loadStatuses();
+  });
+
   socket.on('statusChanged', ({ userId: changedId, isOnline, lastSeen }) => {
     loadDashboardData();
     if (String(activeFriendId) === String(changedId)) {
@@ -192,8 +216,8 @@ async function loadDashboardData() {
     reqList.innerHTML += `<div class="list-item"><span>${req.username}</span><button class="btn-logout" onclick="acceptFriend('${req._id}')">Accept</button></div>`;
   });
 
-  const friendsList = document.getElementById('friends-list');
-  friendsList.innerHTML = '';
+  const chatsSublist = document.getElementById('chats-sublist');
+  chatsSublist.innerHTML = '';
   
   let sortedFriends = (data.friends || []).sort((a, b) => {
     const isAPinned = pinnedFriends.includes(a._id);
@@ -204,7 +228,7 @@ async function loadDashboardData() {
   sortedFriends.forEach(f => {
     const avatar = f.profilePic || 'https://www.w3schools.com/howto/img_avatar.png';
     const isPinned = pinnedFriends.includes(f._id);
-    friendsList.innerHTML += `
+    chatsSublist.innerHTML += `
       <div class="list-item" onclick="openChat('${f._id}', '${f.username}', ${f.isOnline}, '${avatar}', '${f.lastSeen}')">
         <div style="display:flex; align-items:center; gap:10px; position:relative;">
           <img src="${avatar}" style="width:38px; height:38px; border-radius:50%; object-fit:cover;">
@@ -217,6 +241,66 @@ async function loadDashboardData() {
         </div>
       </div>`;
   });
+}
+
+async function loadStatuses() {
+  const res = await fetch('/api/status', { headers: headers() });
+  const statuses = await res.json();
+  const list = document.getElementById('statuses-list');
+  list.innerHTML = '';
+
+  statuses.forEach(st => {
+    const avatar = st.user.profilePic || 'https://www.w3schools.com/howto/img_avatar.png';
+    const timeAgo = new Date(st.createdAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+    list.innerHTML += `
+      <div class="list-item" onclick='viewStatus(${JSON.stringify(st)})'>
+        <div style="display:flex; align-items:center; gap:10px;">
+          <div class="status-ring">
+            <img src="${avatar}" style="width:38px; height:38px; border-radius:50%; object-fit:cover;">
+          </div>
+          <div>
+            <span style="font-weight:600; display:block;">${st.user.username}</span>
+            <span style="font-size:12px; color:var(--text-secondary);">Today at ${timeAgo}</span>
+          </div>
+        </div>
+      </div>`;
+  });
+}
+
+async function openStatusCreator() {
+  const text = prompt("Enter status text message:");
+  if(!text) return;
+  
+  const res = await fetch('/api/status', {
+    method: 'POST',
+    headers: headers(),
+    body: JSON.stringify({ mediaType: 'text', text, bgColor: '#111b21' })
+  });
+  if(res.ok) {
+    alert("Status uploaded successfully!");
+    loadStatuses();
+  }
+}
+
+function viewStatus(st) {
+  fetch(`/api/status/view/${st._id}`, { method: 'POST', headers: headers() });
+
+  const modal = document.createElement('div');
+  modal.className = 'status-story-modal';
+  modal.innerHTML = `
+    <div class="status-progress-bar"><div class="status-progress-fill"></div></div>
+    <div style="position:absolute; top:30px; left:20px; display:flex; align-items:center; gap:10px;">
+      <img src="${st.user.profilePic || 'https://www.w3schools.com/howto/img_avatar.png'}" style="width:35px; height:35px; border-radius:50%;">
+      <span style="font-weight:bold; font-size:14px;">${st.user.username}</span>
+    </div>
+    <span onclick="this.parentElement.remove()" style="position:absolute; top:25px; right:25px; font-size:28px; cursor:pointer;">&times;</span>
+    <div style="padding:40px; text-align:center; font-size:22px; font-weight:bold; background:${st.bgColor}; width:100%; height:100%; display:flex; align-items:center; justify-content:center;">
+      ${st.text || ''}
+      ${st.mediaUrl ? `<img src="${st.mediaUrl}" style="max-width:100%; max-height:80vh;">` : ''}
+    </div>
+  `;
+  document.body.appendChild(modal);
+  setTimeout(() => modal.remove(), 5000);
 }
 
 async function sendFriendRequest() {
@@ -466,3 +550,4 @@ async function sendMessage() {
 }
 
 function logout() { localStorage.clear(); window.location.reload(); }
+    
