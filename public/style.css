@@ -84,6 +84,9 @@ body { background-color: var(--bg-main); color: var(--text-primary); }
 .modal-content { max-width: 90%; max-height: 90%; border-radius: 8px; }
 .modal-close { position: absolute; top: 20px; right: 30px; color: white; font-size: 35px; cursor: pointer; }
 
+.call-control-btn { width: 55px; height: 55px; border-radius: 50%; border: none; background: #ffffff33; color: white; font-size: 20px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background 0.2s; }
+.call-control-btn:hover { background: #ffffff55; }
+
 @media(max-width: 768px) {
   .sidebar { width: 100vw; }
   .chat-area { position: fixed; top: 0; left: 0; width: 100vw; height: 100%; z-index: 10; }
