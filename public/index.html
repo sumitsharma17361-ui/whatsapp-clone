@@ -33,7 +33,6 @@
     body { background-color: var(--bg-primary); color: var(--text-primary); height: 100vh; display: flex; justify-content: center; align-items: center; overflow: hidden; }
     .hidden { display: none !important; }
     
-    /* Auth Screen */
     #auth-screen { width: 100%; height: 100vh; display: flex; justify-content: center; align-items: center; background: linear-gradient(135deg, #00a884 0%, #0b141a 100%); }
     .auth-card { background: var(--sidebar-bg); padding: 40px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.2); width: 350px; text-align: center; }
     .auth-card h2 { margin-bottom: 24px; color: #00a884; }
@@ -42,7 +41,6 @@
     .btn-primary { background: #00a884; color: white; }
     .btn-secondary { background: var(--input-bg); color: var(--text-primary); }
 
-    /* App Layout */
     #app-screen { width: 100vw; height: 100vh; display: flex; }
     #sidebar { width: 380px; background: var(--sidebar-bg); border-right: 1px solid var(--panel-border); display: flex; flex-direction: column; height: 100%; }
     .panel-header { background: var(--panel-header); padding: 10px 16px; display: flex; align-items: center; justify-content: space-between; height: 60px; }
@@ -69,7 +67,6 @@
     .btn-logout { background: #ea0038; color: white; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: bold; }
     .online-dot { width: 10px; height: 10px; background: #25d366; border-radius: 50%; position: absolute; bottom: 2px; left: 28px; border: 2px solid var(--sidebar-bg); }
     
-    /* Full Screen Overlays / Modals */
     .overlay-screen { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: #0b141a; z-index: 1000; display: flex; flex-direction: column; align-items: center; justify-content: center; color: white; }
     .video-grid { display: flex; width: 100%; height: 75vh; gap: 10px; padding: 20px; justify-content: center; }
     .video-grid video { width: 45%; height: 100%; object-fit: cover; background: black; border-radius: 12px; }
@@ -85,7 +82,6 @@
 </head>
 <body>
 
-  <!-- Auth Screen -->
   <div id="auth-screen">
     <div class="auth-card">
       <h2>WhatsApp Ultra</h2>
@@ -96,9 +92,7 @@
     </div>
   </div>
 
-  <!-- App Main Screen -->
   <div id="app-screen" class="hidden">
-    <!-- Sidebar -->
     <div id="sidebar">
       <div class="panel-header">
         <div style="display:flex; align-items:center; gap:12px;">
@@ -109,26 +103,22 @@
           <span id="current-user-display" style="font-weight:600;"></span>
         </div>
         <div style="display:flex; gap:6px;">
-          <button onclick="changePassword()" class="btn-logout" style="background:#00a884;" title="Change Password">🔑</button>
           <button onclick="toggleTheme()" class="btn-logout" style="background:#202c33;" title="Toggle Theme">🌓</button>
           <button onclick="logout()" class="btn-logout">Logout</button>
         </div>
       </div>
 
-      <!-- Add Friend Bar -->
       <div style="padding:10px; background:var(--panel-header); display:flex; gap:6px; border-bottom:1px solid var(--panel-border);">
         <input type="text" id="target-username" placeholder="Add username..." style="flex:1; padding:6px 10px; border-radius:4px; border:none; background:var(--input-bg); color:var(--text-primary); outline:none;">
         <button onclick="sendFriendRequest()" style="background:#00a884; color:white; border:none; padding:6px 12px; border-radius:4px; cursor:pointer;">Add</button>
       </div>
 
-      <!-- Tabs Bar -->
       <div class="tabs-bar">
         <div id="tab-chats-btn" class="tab-btn" onclick="switchTab('chats')" style="color:var(--text-primary); border-bottom:2px solid #00a884;">CHATS</div>
         <div id="tab-status-btn" class="tab-btn" onclick="switchTab('status')">STATUS</div>
         <div id="tab-calls-btn" class="tab-btn" onclick="switchTab('calls')">CALLS</div>
       </div>
 
-      <!-- Content Lists -->
       <div id="friends-list" class="list-container">
         <div id="requests-list"></div>
         <div id="chats-sublist"></div>
@@ -148,7 +138,6 @@
       </div>
     </div>
 
-    <!-- Chat Area -->
     <div id="chat-area" class="mobile-hidden">
       <div id="chat-placeholder" style="flex:1; display:flex; align-items:center; justify-content:center; color:var(--text-secondary); font-size:16px;">
         Select a chat to start messaging
@@ -176,7 +165,6 @@
 
         <div id="messages-display"></div>
 
-        <!-- Reply Preview Bar -->
         <div id="reply-preview-bar" class="hidden" style="background:var(--panel-header); padding:8px 16px; display:flex; justify-content:space-between; align-items:center; border-top:1px solid var(--panel-border);">
           <div style="font-size:13px; color:var(--text-secondary); border-left:3px solid #00a884; padding-left:8px;" id="reply-preview-text"></div>
           <span onclick="cancelReply()" style="cursor:pointer; font-weight:bold; font-size:16px;">&times;</span>
@@ -193,7 +181,6 @@
     </div>
   </div>
 
-  <!-- Incoming Call Modal -->
   <div id="incoming-call-modal" class="overlay-screen hidden" style="background: rgba(0,0,0,0.85);">
     <h2 id="incoming-caller-name" style="margin-bottom:20px;">Incoming Call...</h2>
     <div style="display:flex; gap:20px;">
@@ -202,7 +189,6 @@
     </div>
   </div>
 
-  <!-- Active Call Screen -->
   <div id="call-screen" class="overlay-screen hidden">
     <div style="display:flex; align-items:center; gap:15px; margin-bottom:20px;">
       <img id="call-avatar" src="" style="width:60px; height:60px; border-radius:50%; object-fit:cover;">
@@ -224,7 +210,6 @@
     </div>
   </div>
 
-  <!-- Image Viewer Modal -->
   <div id="image-modal" class="overlay-screen hidden" onclick="closeImageModal()">
     <span style="position:absolute; top:20px; right:30px; font-size:30px; cursor:pointer;">&times;</span>
     <img id="modal-img" style="max-width:90%; max-height:90%; object-fit:contain;">
