@@ -18,7 +18,7 @@ let localStream;
 let remoteStream;
 let incomingCallData = null;
 
-// Updated WebRTC config with robust STUN and free TURN fallback servers for cross-network media streaming
+// Robust WebRTC configuration with STUN and free TURN fallback servers
 const rtcConfig = {
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
@@ -43,7 +43,8 @@ window.onload = () => {
   if (token) {
     showDashboard();
     if(localStorage.getItem('profilePic')) {
-      document.getElementById('my-avatar').src = localStorage.getItem('profilePic');
+      const avatarEl = document.getElementById('my-avatar');
+      if(avatarEl) avatarEl.src = localStorage.getItem('profilePic');
     }
   }
   setupMic();
@@ -68,7 +69,7 @@ function toggleTheme() {
 function toggleSidebar(show) {
   const sidebar = document.getElementById('sidebar');
   const chatArea = document.getElementById('chat-area');
-  if (window.innerWidth <= 768) {
+  if (window.innerWidth <= 768 && sidebar && chatArea) {
     if (show) { sidebar.classList.remove('mobile-hidden'); chatArea.classList.add('mobile-hidden'); }
     else { sidebar.classList.add('mobile-hidden'); chatArea.classList.remove('mobile-hidden'); }
   }
@@ -147,13 +148,38 @@ async function authAction(type) {
   }
 }
 
+async function changePassword() {
+  const oldPassword = prompt("Enter your current (old) password:");
+  if (!oldPassword) return;
+  
+  const newPassword = prompt("Enter your new password:");
+  if (!newPassword) return;
+
+  try {
+    const res = await fetch('/api/change-password', {
+      method: 'POST',
+      headers: headers(),
+      body: JSON.stringify({ oldPassword, newPassword })
+    });
+    const data = await res.json();
+    if (data.error) {
+      alert(data.error);
+    } else {
+      alert(data.message);
+    }
+  } catch (err) {
+    alert("Failed to change password. Try again.");
+  }
+}
+
 async function uploadProfilePic(input) {
   const file = input.files[0];
   if(!file) return;
   const reader = new FileReader();
   reader.onload = async (e) => {
     const base64 = e.target.result;
-    document.getElementById('my-avatar').src = base64;
+    const avatarEl = document.getElementById('my-avatar');
+    if(avatarEl) avatarEl.src = base64;
     localStorage.setItem('profilePic', base64);
     await fetch('/api/profile-pic', {
       method: 'POST', headers: headers(),
@@ -164,9 +190,13 @@ async function uploadProfilePic(input) {
 }
 
 function showDashboard() {
-  document.getElementById('auth-screen').classList.add('hidden');
-  document.getElementById('app-screen').classList.remove('hidden');
-  document.getElementById('current-user-display').innerText = username;
+  const authScreen = document.getElementById('auth-screen');
+  const appScreen = document.getElementById('app-screen');
+  const userDisplay = document.getElementById('current-user-display');
+
+  if(authScreen) authScreen.classList.add('hidden');
+  if(appScreen) appScreen.classList.remove('hidden');
+  if(userDisplay) userDisplay.innerText = username;
   
   socket = io();
   socket.emit('identify', userId);
@@ -190,12 +220,15 @@ function showDashboard() {
 
   socket.on('incomingCall', (data) => {
     incomingCallData = data;
-    document.getElementById('incoming-caller-name').innerText = `${data.name} (${data.callType} call)`;
-    document.getElementById('incoming-call-modal').classList.remove('hidden');
+    const callerNameEl = document.getElementById('incoming-caller-name');
+    const incomingModal = document.getElementById('incoming-call-modal');
+    if(callerNameEl) callerNameEl.innerText = `${data.name} (${data.callType} call)`;
+    if(incomingModal) incomingModal.classList.remove('hidden');
   });
 
   socket.on('callAccepted', async (signal) => {
-    document.getElementById('call-status-text').innerText = 'Connected';
+    const statusText = document.getElementById('call-status-text');
+    if(statusText) statusText.innerText = 'Connected';
     if (peerConnection) {
       await peerConnection.setRemoteDescription(new RTCSessionDescription(signal));
     }
@@ -214,8 +247,10 @@ function showDashboard() {
   socket.on('typingEmit', ({ senderId, isTyping }) => {
     if (String(activeFriendId) === String(senderId)) {
       const el = document.getElementById('active-friend-status');
-      if (isTyping) el.innerText = 'typing...';
-      else el.innerText = 'Online';
+      if(el) {
+        if (isTyping) el.innerText = 'typing...';
+        else el.innerText = 'Online';
+      }
     }
   });
 
@@ -246,7 +281,8 @@ function showDashboard() {
   socket.on('statusChanged', ({ userId: changedId, isOnline, lastSeen }) => {
     loadDashboardData();
     if (String(activeFriendId) === String(changedId)) {
-      document.getElementById('active-friend-status').innerText = isOnline ? 'Online' : `Last seen: ${new Date(lastSeen).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`;
+      const statusEl = document.getElementById('active-friend-status');
+      if(statusEl) statusEl.innerText = isOnline ? 'Online' : `Last seen: ${new Date(lastSeen).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`;
     }
   });
 
@@ -475,18 +511,27 @@ async function deleteStatus(statusId) {
 // WEBRTC CALL FUNCTIONS
 async function startCall(callType) {
   if(!activeFriendId) return;
-  document.getElementById('call-screen').classList.remove('hidden');
-  document.getElementById('call-username').innerText = document.getElementById('active-friend-name').innerText;
-  document.getElementById('call-avatar').src = document.getElementById('active-friend-avatar').src;
-  document.getElementById('call-status-text').innerText = 'Calling...';
+  const callScreen = document.getElementById('call-screen');
+  const callUsername = document.getElementById('call-username');
+  const callAvatar = document.getElementById('call-avatar');
+  const callStatusText = document.getElementById('call-status-text');
+  const videoContainer = document.getElementById('video-container');
 
-  if(callType === 'video') {
-    document.getElementById('video-container').classList.remove('hidden');
+  if(callScreen) callScreen.classList.remove('hidden');
+  const friendNameEl = document.getElementById('active-friend-name');
+  const friendAvatarEl = document.getElementById('active-friend-avatar');
+  if(callUsername && friendNameEl) callUsername.innerText = friendNameEl.innerText;
+  if(callAvatar && friendAvatarEl) callAvatar.src = friendAvatarEl.src;
+  if(callStatusText) callStatusText.innerText = 'Calling...';
+
+  if(callType === 'video' && videoContainer) {
+    videoContainer.classList.remove('hidden');
   }
 
   try {
     localStream = await navigator.mediaDevices.getUserMedia({ video: callType === 'video', audio: true });
-    if(callType === 'video') document.getElementById('local-video').srcObject = localStream;
+    const localVideo = document.getElementById('local-video');
+    if(callType === 'video' && localVideo) localVideo.srcObject = localStream;
 
     createPeerConnection(activeFriendId);
     localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
@@ -508,18 +553,25 @@ async function startCall(callType) {
 }
 
 async function acceptIncomingCall() {
-  document.getElementById('incoming-call-modal').classList.add('hidden');
-  document.getElementById('call-screen').classList.remove('hidden');
-  document.getElementById('call-username').innerText = incomingCallData.name;
-  document.getElementById('call-status-text').innerText = 'Connecting...';
+  const incomingModal = document.getElementById('incoming-call-modal');
+  const callScreen = document.getElementById('call-screen');
+  const callUsername = document.getElementById('call-username');
+  const callStatusText = document.getElementById('call-status-text');
+  const videoContainer = document.getElementById('video-container');
 
-  if(incomingCallData.callType === 'video') {
-    document.getElementById('video-container').classList.remove('hidden');
+  if(incomingModal) incomingModal.classList.add('hidden');
+  if(callScreen) callScreen.classList.remove('hidden');
+  if(callUsername && incomingCallData) callUsername.innerText = incomingCallData.name;
+  if(callStatusText) callStatusText.innerText = 'Connecting...';
+
+  if(incomingCallData && incomingCallData.callType === 'video' && videoContainer) {
+    videoContainer.classList.remove('hidden');
   }
 
   try {
     localStream = await navigator.mediaDevices.getUserMedia({ video: incomingCallData.callType === 'video', audio: true });
-    if(incomingCallData.callType === 'video') document.getElementById('local-video').srcObject = localStream;
+    const localVideo = document.getElementById('local-video');
+    if(incomingCallData.callType === 'video' && localVideo) localVideo.srcObject = localStream;
 
     createPeerConnection(incomingCallData.from);
     localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
@@ -535,9 +587,12 @@ async function acceptIncomingCall() {
 }
 
 function rejectIncomingCall() {
-  document.getElementById('incoming-call-modal').classList.add('hidden');
-  socket.emit('endCall', { to: incomingCallData.from });
-  incomingCallData = null;
+  const incomingModal = document.getElementById('incoming-call-modal');
+  if(incomingModal) incomingModal.classList.add('hidden');
+  if(incomingCallData) {
+    socket.emit('endCall', { to: incomingCallData.from });
+    incomingCallData = null;
+  }
 }
 
 function createPeerConnection(remoteUserId) {
@@ -550,9 +605,11 @@ function createPeerConnection(remoteUserId) {
   };
 
   peerConnection.ontrack = (event) => {
-    document.getElementById('call-status-text').innerText = 'Connected';
+    const callStatusText = document.getElementById('call-status-text');
+    if(callStatusText) callStatusText.innerText = 'Connected';
     remoteStream = event.streams[0];
-    document.getElementById('remote-video').srcObject = remoteStream;
+    const remoteVideo = document.getElementById('remote-video');
+    if(remoteVideo) remoteVideo.srcObject = remoteStream;
   };
 }
 
@@ -570,11 +627,17 @@ function closeCallScreen() {
     peerConnection.close();
     peerConnection = null;
   }
-  document.getElementById('call-screen').classList.add('hidden');
-  document.getElementById('incoming-call-modal').classList.add('hidden');
-  document.getElementById('video-container').classList.add('hidden');
-  document.getElementById('local-video').srcObject = null;
-  document.getElementById('remote-video').srcObject = null;
+  const callScreen = document.getElementById('call-screen');
+  const incomingModal = document.getElementById('incoming-call-modal');
+  const videoContainer = document.getElementById('video-container');
+  const localVideo = document.getElementById('local-video');
+  const remoteVideo = document.getElementById('remote-video');
+
+  if(callScreen) callScreen.classList.add('hidden');
+  if(incomingModal) incomingModal.classList.add('hidden');
+  if(videoContainer) videoContainer.classList.add('hidden');
+  if(localVideo) localVideo.srcObject = null;
+  if(remoteVideo) remoteVideo.srcObject = null;
   incomingCallData = null;
 }
 
@@ -583,7 +646,8 @@ function toggleMute() {
     const audioTrack = localStream.getAudioTracks()[0];
     if(audioTrack) {
       audioTrack.enabled = !audioTrack.enabled;
-      document.getElementById('mute-btn').style.background = audioTrack.enabled ? '#ffffff33' : '#ea0038';
+      const muteBtn = document.getElementById('mute-btn');
+      if(muteBtn) muteBtn.style.background = audioTrack.enabled ? '#ffffff33' : '#ea0038';
     }
   }
 }
@@ -593,17 +657,20 @@ function toggleVideo() {
     const videoTrack = localStream.getVideoTracks()[0];
     if(videoTrack) {
       videoTrack.enabled = !videoTrack.enabled;
-      document.getElementById('video-toggle-btn').style.background = videoTrack.enabled ? '#ffffff33' : '#ea0038';
+      const videoToggleBtn = document.getElementById('video-toggle-btn');
+      if(videoToggleBtn) videoToggleBtn.style.background = videoTrack.enabled ? '#ffffff33' : '#ea0038';
     }
   }
 }
 
 async function sendFriendRequest() {
-  const target = document.getElementById('target-username').value;
+  const targetInput = document.getElementById('target-username');
+  if(!targetInput) return;
+  const target = targetInput.value;
   const res = await fetch('/api/friend-request', { method: 'POST', headers: headers(), body: JSON.stringify({ targetUsername: target }) });
   const data = await res.json();
   alert(data.message || data.error);
-  document.getElementById('target-username').value = '';
+  targetInput.value = '';
 }
 
 async function acceptFriend(requesterId) {
@@ -614,15 +681,22 @@ async function acceptFriend(requesterId) {
 async function openChat(friendId, friendName, isOnline, avatar, lastSeen) {
   activeFriendId = friendId;
   toggleSidebar(false);
-  document.getElementById('chat-placeholder').classList.add('hidden');
-  document.getElementById('active-chat').classList.remove('hidden');
-  document.getElementById('active-friend-name').innerText = friendName;
-  document.getElementById('active-friend-avatar').src = avatar;
-  document.getElementById('active-friend-status').innerText = isOnline ? 'Online' : `Last seen: ${new Date(lastSeen).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`;
+  const chatPlaceholder = document.getElementById('chat-placeholder');
+  const activeChat = document.getElementById('active-chat');
+  const friendNameEl = document.getElementById('active-friend-name');
+  const friendAvatarEl = document.getElementById('active-friend-avatar');
+  const friendStatusEl = document.getElementById('active-friend-status');
+
+  if(chatPlaceholder) chatPlaceholder.classList.add('hidden');
+  if(activeChat) activeChat.classList.remove('hidden');
+  if(friendNameEl) friendNameEl.innerText = friendName;
+  if(friendAvatarEl) friendAvatarEl.src = avatar;
+  if(friendStatusEl) friendStatusEl.innerText = isOnline ? 'Online' : `Last seen: ${new Date(lastSeen).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`;
 
   const res = await fetch(`/api/messages/${friendId}`, { headers: headers() });
   let messages = await res.json();
   const display = document.getElementById('messages-display');
+  if(!display) return;
   display.innerHTML = '';
   
   messages.forEach(msg => {
@@ -633,14 +707,18 @@ async function openChat(friendId, friendName, isOnline, avatar, lastSeen) {
 
 function setReply(msgText) {
   replyMessageData = msgText;
-  document.getElementById('reply-preview-text').innerText = msgText;
-  document.getElementById('reply-preview-bar').classList.remove('hidden');
-  document.getElementById('message-input').focus();
+  const replyTextEl = document.getElementById('reply-preview-text');
+  const replyBarEl = document.getElementById('reply-preview-bar');
+  const msgInput = document.getElementById('message-input');
+  if(replyTextEl) replyTextEl.innerText = msgText;
+  if(replyBarEl) replyBarEl.classList.remove('hidden');
+  if(msgInput) msgInput.focus();
 }
 
 function cancelReply() {
   replyMessageData = null;
-  document.getElementById('reply-preview-bar').classList.add('hidden');
+  const replyBarEl = document.getElementById('reply-preview-bar');
+  if(replyBarEl) replyBarEl.classList.add('hidden');
 }
 
 function sendReaction(msgId, emoji) {
@@ -648,16 +726,20 @@ function sendReaction(msgId, emoji) {
 }
 
 function openImageModal(url) {
-  document.getElementById('modal-img').src = url;
-  document.getElementById('image-modal').classList.remove('hidden');
+  const modalImg = document.getElementById('modal-img');
+  const imageModal = document.getElementById('image-modal');
+  if(modalImg) modalImg.src = url;
+  if(imageModal) imageModal.classList.remove('hidden');
 }
 
 function closeImageModal() {
-  document.getElementById('image-modal').classList.add('hidden');
+  const imageModal = document.getElementById('image-modal');
+  if(imageModal) imageModal.classList.add('hidden');
 }
 
 function toggleInChatSearch() {
   const el = document.getElementById('in-chat-search');
+  if(!el) return;
   el.classList.toggle('hidden');
   if(!el.classList.contains('hidden')) el.focus();
 }
@@ -679,8 +761,9 @@ async function clearFullChat() {
         headers: headers()
       });
       const data = await res.json();
+      const display = document.getElementById('messages-display');
       if (data.message) {
-        document.getElementById('messages-display').innerHTML = '';
+        if(display) display.innerHTML = '';
         socket.emit('clearChatEmit', { receiverId: activeFriendId });
       } else { alert("Failed to clear chat"); }
     } catch(err) { alert("Error clearing chat"); }
@@ -701,7 +784,8 @@ function setupMic() {
         const reader = new FileReader();
         reader.onloadend = async () => {
            selectedFile = { name: `Voice-${Date.now()}.mp3`, type: 'audio/mp3', data: reader.result };
-           document.getElementById('message-input').value = `🎙️ Voice Note (Ready)`;
+           const msgInput = document.getElementById('message-input');
+           if(msgInput) msgInput.value = `🎙️ Voice Note (Ready)`;
         };
         reader.readAsDataURL(audioBlob);
       };
@@ -716,7 +800,8 @@ function handleFileSelect(input) {
   const reader = new FileReader();
   reader.onload = function(e) {
     selectedFile = { name: file.name, type: file.type, data: e.target.result };
-    document.getElementById('message-input').value = `📎 ${file.name} (Ready)`;
+    const msgInput = document.getElementById('message-input');
+    if(msgInput) msgInput.value = `📎 ${file.name} (Ready)`;
   };
   reader.readAsDataURL(file);
 }
@@ -729,6 +814,7 @@ function deleteMessage(msgId) {
 
 function renderSingleMessage(msg) {
   const display = document.getElementById('messages-display');
+  if(!display) return;
   const msgSenderId = String(msg.sender._id || msg.sender);
   const currentLoggedUserId = String(userId);
   const type = msgSenderId === currentLoggedUserId ? 'sent' : 'received';
@@ -795,6 +881,7 @@ function renderSingleMessage(msg) {
 
 async function sendMessage() {
   const input = document.getElementById('message-input');
+  if(!input) return;
   let textToSend = input.value.trim();
   if (!textToSend && !selectedFile) return;
 
@@ -802,22 +889,27 @@ async function sendMessage() {
   cancelReply();
 
   if (selectedFile) {
-    const filePayload = selectedFile; selectedFile = null; document.getElementById('file-input').value = ""; input.value = '';
+    const filePayload = selectedFile; selectedFile = null; 
+    const fileInput = document.getElementById('file-input');
+    if(fileInput) fileInput.value = ""; 
+    input.value = '';
     if (textToSend.includes('(Ready)')) textToSend = "";
     const timestamp = Date.now();
     const display = document.getElementById('messages-display');
     
-    display.innerHTML += `
-      <div class="msg sent" id="temp-${timestamp}">
-        <div class="media-box">
-          <div style="font-size:13px; margin-bottom: 5px;">📤 Uploading: ${filePayload.name}</div>
-          <div class="progress-container" style="background:#e9edef; border-radius:4px; height:6px; width:100%; overflow:hidden; margin:4px 0;">
-            <div class="progress-bar" id="progress-${timestamp}" style="width: 0%; height:100%; background:#00a884; transition: width 0.2s;"></div>
+    if(display) {
+      display.innerHTML += `
+        <div class="msg sent" id="temp-${timestamp}">
+          <div class="media-box">
+            <div style="font-size:13px; margin-bottom: 5px;">📤 Uploading: ${filePayload.name}</div>
+            <div class="progress-container" style="background:#e9edef; border-radius:4px; height:6px; width:100%; overflow:hidden; margin:4px 0;">
+              <div class="progress-bar" id="progress-${timestamp}" style="width: 0%; height:100%; background:#00a884; transition: width 0.2s;"></div>
+            </div>
+            <span id="percent-${timestamp}" style="font-size:11px; color:#667781;">0%</span>
           </div>
-          <span id="percent-${timestamp}" style="font-size:11px; color:#667781;">0%</span>
-        </div>
-      </div>`;
-    display.scrollTop = display.scrollHeight;
+        </div>`;
+      display.scrollTop = display.scrollHeight;
+    }
 
     const xhr = new XMLHttpRequest();
     xhr.open("POST", "/api/upload", true);
