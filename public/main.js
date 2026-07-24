@@ -18,8 +18,15 @@ let localStream;
 let remoteStream;
 let incomingCallData = null;
 
+// Updated WebRTC config with multiple fallback STUN servers for cross-network media transmission
 const rtcConfig = {
-  iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+  iceServers: [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'stun:stun2.l.google.com:19302' },
+    { urls: 'stun:stun3.l.google.com:19302' },
+    { urls: 'stun:stun4.l.google.com:19302' }
+  ]
 };
 
 const mockEncryptionKey = "WhatsAppLiteSecretKey12345"; 
@@ -75,24 +82,24 @@ function switchTab(tab) {
   const statusView = document.getElementById('status-view-container');
   const callsView = document.getElementById('calls-view-container');
 
-  chatsBtn.style.color = 'var(--text-secondary)'; chatsBtn.style.borderBottom = 'none';
-  statusBtn.style.color = 'var(--text-secondary)'; statusBtn.style.borderBottom = 'none';
-  callsBtn.style.color = 'var(--text-secondary)'; callsBtn.style.borderBottom = 'none';
+  if(chatsBtn) { chatsBtn.style.color = 'var(--text-secondary)'; chatsBtn.style.borderBottom = 'none'; }
+  if(statusBtn) { statusBtn.style.color = 'var(--text-secondary)'; statusBtn.style.borderBottom = 'none'; }
+  if(callsBtn) { callsBtn.style.color = 'var(--text-secondary)'; callsBtn.style.borderBottom = 'none'; }
 
-  friendsList.classList.add('hidden');
-  statusView.classList.add('hidden');
-  callsView.classList.add('hidden');
+  if(friendsList) friendsList.classList.add('hidden');
+  if(statusView) statusView.classList.add('hidden');
+  if(callsView) callsView.classList.add('hidden');
 
   if(tab === 'chats') {
-    chatsBtn.style.color = 'var(--text-primary)'; chatsBtn.style.borderBottom = '2px solid #00a884';
-    friendsList.classList.remove('hidden');
+    if(chatsBtn) { chatsBtn.style.color = 'var(--text-primary)'; chatsBtn.style.borderBottom = '2px solid #00a884'; }
+    if(friendsList) friendsList.classList.remove('hidden');
   } else if(tab === 'status') {
-    statusBtn.style.color = 'var(--text-primary)'; statusBtn.style.borderBottom = '2px solid #00a884';
-    statusView.classList.remove('hidden');
+    if(statusBtn) { statusBtn.style.color = 'var(--text-primary)'; statusBtn.style.borderBottom = '2px solid #00a884'; }
+    if(statusView) statusView.classList.remove('hidden');
     loadStatuses();
   } else if(tab === 'calls') {
-    callsBtn.style.color = 'var(--text-primary)'; callsBtn.style.borderBottom = '2px solid #00a884';
-    callsView.classList.remove('hidden');
+    if(callsBtn) { callsBtn.style.color = 'var(--text-primary)'; callsBtn.style.borderBottom = '2px solid #00a884'; }
+    if(callsView) callsView.classList.remove('hidden');
     loadCallLogs();
   }
 }
@@ -103,9 +110,11 @@ async function authAction(type) {
   if(!u || !p) return alert("Please fill username and password");
 
   const loginBtn = document.querySelector('.btn-primary');
-  const originalText = loginBtn.innerText;
-  loginBtn.innerText = type === 'login' ? 'Logging in...' : 'Registering...';
-  loginBtn.disabled = true;
+  const originalText = loginBtn ? loginBtn.innerText : 'Login';
+  if(loginBtn) {
+    loginBtn.innerText = type === 'login' ? 'Logging in...' : 'Registering...';
+    loginBtn.disabled = true;
+  }
 
   const endpoint = type === 'login' ? '/api/login' : '/api/register';
   try {
@@ -117,8 +126,7 @@ async function authAction(type) {
     
     if (data.error) {
       alert(data.error);
-      loginBtn.innerText = originalText;
-      loginBtn.disabled = false;
+      if(loginBtn) { loginBtn.innerText = originalText; loginBtn.disabled = false; }
       return;
     }
     
@@ -130,13 +138,11 @@ async function authAction(type) {
       window.location.reload();
     } else { 
       alert('Registered successfully! Now click Login.'); 
-      loginBtn.innerText = originalText;
-      loginBtn.disabled = false;
+      if(loginBtn) { loginBtn.innerText = originalText; loginBtn.disabled = false; }
     }
   } catch(err) {
     alert("Connection error. Please try again.");
-    loginBtn.innerText = originalText;
-    loginBtn.disabled = false;
+    if(loginBtn) { loginBtn.innerText = originalText; loginBtn.disabled = false; }
   }
 }
 
@@ -189,7 +195,9 @@ function showDashboard() {
 
   socket.on('callAccepted', async (signal) => {
     document.getElementById('call-status-text').innerText = 'Connected';
-    await peerConnection.setRemoteDescription(new RTCSessionDescription(signal));
+    if (peerConnection) {
+      await peerConnection.setRemoteDescription(new RTCSessionDescription(signal));
+    }
   });
 
   socket.on('iceCandidate', async ({ candidate }) => {
@@ -273,42 +281,47 @@ async function loadDashboardData() {
   const data = await res.json();
   
   const reqList = document.getElementById('requests-list');
-  reqList.innerHTML = '';
-  (data.friendRequests || []).forEach(req => {
-    reqList.innerHTML += `<div class="list-item"><span>${req.username}</span><button class="btn-logout" onclick="acceptFriend('${req._id}')">Accept</button></div>`;
-  });
+  if(reqList) {
+    reqList.innerHTML = '';
+    (data.friendRequests || []).forEach(req => {
+      reqList.innerHTML += `<div class="list-item"><span>${req.username}</span><button class="btn-logout" onclick="acceptFriend('${req._id}')">Accept</button></div>`;
+    });
+  }
 
   const chatsSublist = document.getElementById('chats-sublist');
-  chatsSublist.innerHTML = '';
-  
-  let sortedFriends = (data.friends || []).sort((a, b) => {
-    const isAPinned = pinnedFriends.includes(a._id);
-    const isBPinned = pinnedFriends.includes(b._id);
-    return isBPinned - isAPinned;
-  });
+  if(chatsSublist) {
+    chatsSublist.innerHTML = '';
+    
+    let sortedFriends = (data.friends || []).sort((a, b) => {
+      const isAPinned = pinnedFriends.includes(a._id);
+      const isBPinned = pinnedFriends.includes(b._id);
+      return isBPinned - isAPinned;
+    });
 
-  sortedFriends.forEach(f => {
-    const avatar = f.profilePic || 'https://www.w3schools.com/howto/img_avatar.png';
-    const isPinned = pinnedFriends.includes(f._id);
-    chatsSublist.innerHTML += `
-      <div class="list-item" onclick="openChat('${f._id}', '${f.username}', ${f.isOnline}, '${avatar}', '${f.lastSeen}')">
-        <div style="display:flex; align-items:center; gap:10px; position:relative;">
-          <img src="${avatar}" style="width:38px; height:38px; border-radius:50%; object-fit:cover;">
-          ${f.isOnline ? '<span class="online-dot"></span>' : ''}
-          <span style="font-weight:600;">${f.username} ${isPinned ? '<span class="pin-icon">📌</span>':''}</span>
-        </div>
-        <div style="display:flex; align-items:center; gap:8px;">
-          <span id="status-${f._id}" style="font-size:12px; color:${f.isOnline ? '#25d366':'#8696a0'}">${f.isOnline ? 'Online':'Offline'}</span>
-          <span onclick="togglePinFriend(event, '${f._id}')" style="cursor:pointer; font-size:14px;" title="Pin Chat">${isPinned ? '📍':'📌'}</span>
-        </div>
-      </div>`;
-  });
+    sortedFriends.forEach(f => {
+      const avatar = f.profilePic || 'https://www.w3schools.com/howto/img_avatar.png';
+      const isPinned = pinnedFriends.includes(f._id);
+      chatsSublist.innerHTML += `
+        <div class="list-item" onclick="openChat('${f._id}', '${f.username}', ${f.isOnline}, '${avatar}', '${f.lastSeen}')">
+          <div style="display:flex; align-items:center; gap:10px; position:relative;">
+            <img src="${avatar}" style="width:38px; height:38px; border-radius:50%; object-fit:cover;">
+            ${f.isOnline ? '<span class="online-dot"></span>' : ''}
+            <span style="font-weight:600;">${f.username} ${isPinned ? '<span class="pin-icon">📌</span>':''}</span>
+          </div>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <span id="status-${f._id}" style="font-size:12px; color:${f.isOnline ? '#25d366':'#8696a0'}">${f.isOnline ? 'Online':'Offline'}</span>
+            <span onclick="togglePinFriend(event, '${f._id}')" style="cursor:pointer; font-size:14px;" title="Pin Chat">${isPinned ? '📍':'📌'}</span>
+          </div>
+        </div>`;
+    });
+  }
 }
 
 async function loadStatuses() {
   const res = await fetch('/api/status', { headers: headers() });
   const statuses = await res.json();
   const list = document.getElementById('statuses-list');
+  if(!list) return;
   list.innerHTML = '';
 
   statuses.forEach(st => {
@@ -333,6 +346,7 @@ async function loadCallLogs() {
   const res = await fetch('/api/calls', { headers: headers() });
   const logs = await res.json();
   const list = document.getElementById('calls-list');
+  if(!list) return;
   list.innerHTML = '';
 
   if(logs.length === 0) {
@@ -566,8 +580,10 @@ function closeCallScreen() {
 function toggleMute() {
   if(localStream) {
     const audioTrack = localStream.getAudioTracks()[0];
-    audioTrack.enabled = !audioTrack.enabled;
-    document.getElementById('mute-btn').style.background = audioTrack.enabled ? '#ffffff33' : '#ea0038';
+    if(audioTrack) {
+      audioTrack.enabled = !audioTrack.enabled;
+      document.getElementById('mute-btn').style.background = audioTrack.enabled ? '#ffffff33' : '#ea0038';
+    }
   }
 }
 
