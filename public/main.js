@@ -267,6 +267,22 @@ async function loadStatuses() {
   });
 }
 
+async function openStatusCreator() {
+  const text = prompt("Enter status text message:");
+  if(text !== null) {
+    if(!text.trim()) return;
+    const res = await fetch('/api/status', {
+      method: 'POST',
+      headers: headers(),
+      body: JSON.stringify({ mediaType: 'text', text, bgColor: '#111b21' })
+    });
+    if(res.ok) {
+      alert("Text status uploaded!");
+      loadStatuses();
+    }
+  }
+}
+
 async function uploadStatusMedia(input) {
   const file = input.files[0];
   if(!file) return;
@@ -306,6 +322,8 @@ async function uploadStatusMedia(input) {
 function viewStatus(st) {
   fetch(`/api/status/view/${st._id}`, { method: 'POST', headers: headers() });
 
+  const isMyStatus = String(st.user._id || st.user) === String(userId);
+
   const modal = document.createElement('div');
   modal.className = 'status-story-modal';
   modal.innerHTML = `
@@ -314,6 +332,9 @@ function viewStatus(st) {
       <img src="${st.user.profilePic || 'https://www.w3schools.com/howto/img_avatar.png'}" style="width:35px; height:35px; border-radius:50%;">
       <span style="font-weight:bold; font-size:14px;">${st.user.username}</span>
     </div>
+    
+    ${isMyStatus ? `<button onclick="deleteStatus('${st._id}')" style="position:absolute; top:28px; right:70px; background:#ea0038; color:white; border:none; padding:6px 12px; border-radius:6px; cursor:pointer; font-weight:bold; z-index:10; font-size:12px;">🗑️ Delete</button>` : ''}
+    
     <span onclick="this.parentElement.remove()" style="position:absolute; top:25px; right:25px; font-size:28px; cursor:pointer; z-index:10;">&times;</span>
     <div style="padding:40px; text-align:center; font-size:20px; font-weight:bold; background:${st.bgColor || '#000'}; width:100%; height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:15px;">
       ${st.mediaUrl ? (st.mediaType === 'video' ? `<video src="${st.mediaUrl}" controls autoplay style="max-width:90%; max-height:75vh; border-radius:8px;"></video>` : `<img src="${st.mediaUrl}" style="max-width:90%; max-height:75vh; border-radius:8px;">`) : ''}
@@ -321,6 +342,22 @@ function viewStatus(st) {
     </div>
   `;
   document.body.appendChild(modal);
+}
+
+async function deleteStatus(statusId) {
+  if (confirm("Are you sure you want to delete this status?")) {
+    const res = await fetch(`/api/status/${statusId}`, {
+      method: 'DELETE',
+      headers: headers()
+    });
+    if (res.ok) {
+      alert("Status deleted successfully!");
+      document.querySelector('.status-story-modal').remove();
+      loadStatuses();
+    } else {
+      alert("Failed to delete status");
+    }
+  }
 }
 
 async function sendFriendRequest() {
