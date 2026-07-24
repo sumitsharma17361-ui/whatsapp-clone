@@ -14,6 +14,40 @@
     <img id="modal-img" class="modal-content">
   </div>
 
+  <!-- CALL SCREEN / MODAL -->
+  <div id="call-screen" class="modal-overlay hidden" style="background: #111b21; z-index: 3000; flex-direction: column; justify-content: space-between; padding: 30px;">
+    <div style="display: flex; flex-direction: column; align-items: center; margin-top: 40px;">
+      <img id="call-avatar" src="https://www.w3schools.com/howto/img_avatar.png" style="width: 100px; height: 100px; border-radius: 50%; object-fit: cover; border: 3px solid #00a884; margin-bottom: 15px;">
+      <h2 id="call-username" style="color: white; font-size: 22px;">Calling...</h2>
+      <p id="call-status-text" style="color: #8696a0; font-size: 14px; margin-top: 5px;">Ringing...</p>
+    </div>
+
+    <!-- Video Streams Container -->
+    <div id="video-container" style="display: flex; gap: 10px; width: 100%; height: 50vh; justify-content: center; position: relative;" class="hidden">
+      <video id="remote-video" autoplay playsinline style="width: 100%; height: 100%; object-fit: cover; border-radius: 12px; background: #000;"></video>
+      <video id="local-video" autoplay playsinline muted style="width: 120px; height: 160px; object-fit: cover; border-radius: 8px; position: absolute; bottom: 15px; right: 15px; border: 2px solid white; background: #000;"></video>
+    </div>
+
+    <!-- Call Controls -->
+    <div style="display: flex; gap: 30px; justify-content: center; align-items: center; margin-bottom: 30px;">
+      <button onclick="toggleMute()" id="mute-btn" class="call-control-btn" title="Mute Mic">🎤</button>
+      <button onclick="endCall()" class="call-control-btn" style="background: #ea0038; color: white;" title="End Call">📞</button>
+      <button onclick="toggleVideo()" id="video-toggle-btn" class="call-control-btn" title="Toggle Camera">📹</button>
+    </div>
+  </div>
+
+  <!-- INCOMING CALL RINGING MODAL -->
+  <div id="incoming-call-modal" class="modal-overlay hidden" style="background: rgba(0,0,0,0.85); z-index: 3500;">
+    <div class="card" style="background: var(--card-bg); width: 320px; padding: 30px;">
+      <h3 style="color: var(--text-primary); margin-bottom: 10px;">Incoming Call...</h3>
+      <p id="incoming-caller-name" style="font-size: 18px; font-weight: bold; color: #00a884; margin-bottom: 20px;"></p>
+      <div style="display: flex; gap: 15px; justify-content: center;">
+        <button onclick="acceptIncomingCall()" class="btn-primary" style="background: #25d366; flex: 1;">Accept</button>
+        <button onclick="rejectIncomingCall()" class="btn-secondary" style="background: #ea0038; flex: 1;">Reject</button>
+      </div>
+    </div>
+  </div>
+
   <div id="auth-screen" class="centered-container">
     <div class="card">
       <h2 class="auth-title">WhatsApp Ultra</h2>
@@ -61,7 +95,6 @@
         <div id="status-view-container" class="list-container hidden">
           <input type="file" id="status-file-input" style="display:none;" accept="image/*,video/*" onchange="uploadStatusMedia(this)">
           
-          <!-- Option 1: Text Status -->
           <div class="list-item" onclick="openStatusCreator()">
             <div style="display:flex; align-items:center; gap:10px;">
               <div style="position:relative;">
@@ -75,7 +108,6 @@
             </div>
           </div>
 
-          <!-- Option 2: Photo/Video Status -->
           <div class="list-item" onclick="document.getElementById('status-file-input').click()">
             <div style="display:flex; align-items:center; gap:10px;">
               <div style="position:relative;">
@@ -111,6 +143,8 @@
             </div>
           </div>
           <div class="chat-header-actions">
+            <button onclick="startCall('audio')" class="icon-btn" title="Audio Call">📞</button>
+            <button onclick="startCall('video')" class="icon-btn" title="Video Call">📹</button>
             <input type="text" id="in-chat-search" placeholder="Search in chat..." oninput="searchInChat(this.value)" class="chat-search-input hidden">
             <button onclick="toggleInChatSearch()" class="icon-btn" title="Search Message">🔍</button>
             <button onclick="clearFullChat()" class="icon-btn" title="Clear Chat" style="color:#ea0038;">🗑️</button>
