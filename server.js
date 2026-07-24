@@ -27,7 +27,7 @@ app.use(express.json({ limit: '100mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 mongoose.connect(process.env.MONGODB_URI)
-  .then(() => console.log('MongoDB Connected (Status & Chat Engine Ready)'))
+  .then(() => console.log('MongoDB Connected (Call & Chat Engine Ready)'))
   .catch(err => console.error('DB Connection Error:', err));
 
 app.post('/api/upload', async (req, res) => {
@@ -203,6 +203,23 @@ io.on('connection', (socket) => {
     io.to(data.senderId).emit('receiveMessage', msgDataToSend);
   });
 
+  // WebRTC Signaling Events
+  socket.on('callUser', ({ userToCall, signalData, from, name, callType }) => {
+    io.to(userToCall).emit('incomingCall', { signal: signalData, from, name, callType });
+  });
+
+  socket.on('answerCall', (data) => {
+    io.to(data.to).emit('callAccepted', data.signal);
+  });
+
+  socket.on('iceCandidate', ({ candidate, to }) => {
+    io.to(to).emit('iceCandidate', { candidate });
+  });
+
+  socket.on('endCall', ({ to }) => {
+    io.to(to).emit('callEnded');
+  });
+
   socket.on('typing', ({ receiverId, isTyping }) => {
     io.to(receiverId).emit('typingEmit', { senderId: currentUserId, isTyping });
   });
@@ -240,4 +257,3 @@ io.on('connection', (socket) => {
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
-        
