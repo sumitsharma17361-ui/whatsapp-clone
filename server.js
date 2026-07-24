@@ -144,6 +144,20 @@ app.post('/api/status/view/:statusId', auth, async (req, res) => {
   } catch (err) { res.status(500).json({ error: 'Failed' }); }
 });
 
+app.delete('/api/status/:statusId', auth, async (req, res) => {
+  try {
+    const status = await Status.findById(req.params.statusId);
+    if (!status) return res.status(404).json({ error: 'Status not found' });
+    if (status.user.toString() !== req.user.userId) return res.status(403).json({ error: 'Unauthorized' });
+    
+    await Status.findByIdAndDelete(req.params.statusId);
+    io.emit('statusUpdated');
+    res.json({ message: 'Status deleted successfully' });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to delete status' });
+  }
+});
+
 app.get('/api/messages/:friendId', auth, async (req, res) => {
   await Message.updateMany(
     { sender: req.params.friendId, receiver: req.user.userId, status: { $ne: 'read' } },
@@ -226,3 +240,4 @@ io.on('connection', (socket) => {
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+        
