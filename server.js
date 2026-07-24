@@ -107,31 +107,6 @@ app.post('/api/login', async (req, res) => {
   }
 });
 
-// Change Password Route
-app.post('/api/change-password', authenticateToken, async (req, res) => {
-  try {
-    const { oldPassword, newPassword } = req.body;
-    if (!oldPassword || !newPassword) {
-      return res.status(400).json({ error: 'Please provide old and new password' });
-    }
-
-    const user = await User.findById(req.user.userId);
-    if (!user) return res.status(404).json({ error: 'User not found' });
-
-    const isMatch = await bcrypt.compare(oldPassword, user.password);
-    if (!isMatch) {
-      return res.status(400).json({ error: 'Incorrect old password' });
-    }
-
-    user.password = await bcrypt.hash(newPassword, 10);
-    await user.save();
-
-    res.json({ message: 'Password changed successfully!' });
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
 app.post('/api/profile-pic', authenticateToken, async (req, res) => {
   try {
     await User.findByIdAndUpdate(req.user.userId, { profilePic: req.body.profilePic });
@@ -350,4 +325,3 @@ io.on('connection', (socket) => {
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
-                                                
