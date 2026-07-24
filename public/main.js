@@ -18,16 +18,8 @@ let localStream;
 let remoteStream;
 let incomingCallData = null;
 
-// Robust WebRTC configuration with STUN and free TURN fallback servers
 const rtcConfig = {
-  iceServers: [
-    { urls: 'stun:stun.l.google.com:19302' },
-    { urls: 'stun:stun1.l.google.com:19302' },
-    { urls: 'stun:stun2.l.google.com:19302' },
-    { urls: 'stun:openrelay.metered.ca:80' },
-    { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
-    { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' }
-  ]
+  iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
 };
 
 const mockEncryptionKey = "WhatsAppLiteSecretKey12345"; 
@@ -145,30 +137,6 @@ async function authAction(type) {
   } catch(err) {
     alert("Connection error. Please try again.");
     if(loginBtn) { loginBtn.innerText = originalText; loginBtn.disabled = false; }
-  }
-}
-
-async function changePassword() {
-  const oldPassword = prompt("Enter your current (old) password:");
-  if (!oldPassword) return;
-  
-  const newPassword = prompt("Enter your new password:");
-  if (!newPassword) return;
-
-  try {
-    const res = await fetch('/api/change-password', {
-      method: 'POST',
-      headers: headers(),
-      body: JSON.stringify({ oldPassword, newPassword })
-    });
-    const data = await res.json();
-    if (data.error) {
-      alert(data.error);
-    } else {
-      alert(data.message);
-    }
-  } catch (err) {
-    alert("Failed to change password. Try again.");
   }
 }
 
@@ -508,7 +476,6 @@ async function deleteStatus(statusId) {
   }
 }
 
-// WEBRTC CALL FUNCTIONS
 async function startCall(callType) {
   if(!activeFriendId) return;
   const callScreen = document.getElementById('call-screen');
@@ -525,6 +492,13 @@ async function startCall(callType) {
   if(callStatusText) callStatusText.innerText = 'Calling...';
 
   if(callType === 'video' && videoContainer) {
+    videoContainer.classList.remove('hidden');
+  }
+
+  try {
+    localStream = await navigator.mediaDevices.getUserMedia({ video: callType === 'video', audio: true });
+    const localVideo = document.getElementById('local-video');
+    if(callType === 'video' && videoContainer) {
     videoContainer.classList.remove('hidden');
   }
 
