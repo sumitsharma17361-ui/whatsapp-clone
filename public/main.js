@@ -102,21 +102,42 @@ async function authAction(type) {
   const p = document.getElementById('auth-password').value.trim();
   if(!u || !p) return alert("Please fill username and password");
 
+  const loginBtn = document.querySelector('.btn-primary');
+  const originalText = loginBtn.innerText;
+  loginBtn.innerText = type === 'login' ? 'Logging in...' : 'Registering...';
+  loginBtn.disabled = true;
+
   const endpoint = type === 'login' ? '/api/login' : '/api/register';
-  const res = await fetch(endpoint, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username: u, password: p })
-  });
-  const data = await res.json();
-  if (data.error) return alert(data.error);
-  
-  if (type === 'login') {
-    localStorage.setItem('token', data.token);
-    localStorage.setItem('userId', data.userId);
-    localStorage.setItem('username', data.username);
-    if(data.profilePic) localStorage.setItem('profilePic', data.profilePic);
-    window.location.reload();
-  } else { alert('Registered successfully! Now click Login.'); }
+  try {
+    const res = await fetch(endpoint, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: u, password: p })
+    });
+    const data = await res.json();
+    
+    if (data.error) {
+      alert(data.error);
+      loginBtn.innerText = originalText;
+      loginBtn.disabled = false;
+      return;
+    }
+    
+    if (type === 'login') {
+      localStorage.setItem('token', data.token);
+      localStorage.setItem('userId', data.userId);
+      localStorage.setItem('username', data.username);
+      if(data.profilePic) localStorage.setItem('profilePic', data.profilePic);
+      window.location.reload();
+    } else { 
+      alert('Registered successfully! Now click Login.'); 
+      loginBtn.innerText = originalText;
+      loginBtn.disabled = false;
+    }
+  } catch(err) {
+    alert("Connection error. Please try again.");
+    loginBtn.innerText = originalText;
+    loginBtn.disabled = false;
+  }
 }
 
 async function uploadProfilePic(input) {
@@ -736,13 +757,20 @@ function renderSingleMessage(msg) {
     `;
   }
 
+  const timeString = new Date(msg.timestamp || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+  let footerHtml = `<div style="float:right; display:flex; align-items:center; gap:4px; margin-top:2px; margin-left:8px; font-size:10px; color:#667781; font-weight:600;">`;
+  footerHtml += `<span>${timeString}</span>`;
+
   if(type === 'sent') {
      let tickSymbol = '✓'; let tickColor = '#8696a0';
      if(msg.status === 'delivered' || msg.status === 'read') tickSymbol = '✓✓';
      if(msg.status === 'read') tickColor = '#53bdeb';
-     contentHtml += `<span class="tick-status" id="tick-${msg._id}" style="float:right; font-size:11px; margin-left:5px; color:${tickColor}; font-weight:bold;">${tickSymbol}</span>`;
+     footerHtml += `<span class="tick-status" id="tick-${msg._id}" style="color:${tickColor}; font-weight:bold;">${tickSymbol}</span>`;
   }
+  footerHtml += `</div>`;
 
+  contentHtml += footerHtml;
   contentHtml += '</div>';
   display.innerHTML += `<div class="msg ${type}" id="msg-${msg._id}">${contentHtml}</div>`;
   display.scrollTop = display.scrollHeight;
