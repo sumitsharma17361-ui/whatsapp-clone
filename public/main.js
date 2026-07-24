@@ -140,30 +140,6 @@ async function authAction(type) {
   }
 }
 
-async function changePassword() {
-  const oldPassword = prompt("Enter your current (old) password:");
-  if (!oldPassword) return;
-  
-  const newPassword = prompt("Enter your new password:");
-  if (!newPassword) return;
-
-  try {
-    const res = await fetch('/api/change-password', {
-      method: 'POST',
-      headers: headers(),
-      body: JSON.stringify({ oldPassword, newPassword })
-    });
-    const data = await res.json();
-    if (data.error) {
-      alert(data.error);
-    } else {
-      alert(data.message);
-    }
-  } catch (err) {
-    alert("Failed to change password. Try again.");
-  }
-}
-
 async function uploadProfilePic(input) {
   const file = input.files[0];
   if(!file) return;
