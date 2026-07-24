@@ -11,6 +11,7 @@ const fs = require('fs');
 const User = require('./models/User');
 const Message = require('./models/Message');
 const Status = require('./models/Status');
+const CallLog = require('./models/CallLog');
 
 const app = express();
 const server = http.createServer(app);
@@ -27,7 +28,7 @@ app.use(express.json({ limit: '100mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 mongoose.connect(process.env.MONGODB_URI)
-  .then(() => console.log('MongoDB Connected (Call & Chat Engine Ready)'))
+  .then(() => console.log('MongoDB Connected (Calls & Chat Engine Ready)'))
   .catch(err => console.error('DB Connection Error:', err));
 
 app.post('/api/upload', async (req, res) => {
@@ -158,6 +159,17 @@ app.delete('/api/status/:statusId', auth, async (req, res) => {
   }
 });
 
+// CALL LOGS APIs
+app.get('/api/calls', auth, async (req, res) => {
+  try {
+    const logs = await CallLog.find({ $or: [{ caller: req.user.userId }, { receiver: req.user.userId }] })
+      .populate('caller', 'username profilePic')
+      .populate('receiver', 'username profilePic')
+      .sort('-timestamp');
+    res.json(logs);
+  } catch (err) { res.status(500).json({ error: 'Failed' }); }
+});
+
 app.get('/api/messages/:friendId', auth, async (req, res) => {
   await Message.updateMany(
     { sender: req.params.friendId, receiver: req.user.userId, status: { $ne: 'read' } },
@@ -203,12 +215,16 @@ io.on('connection', (socket) => {
     io.to(data.senderId).emit('receiveMessage', msgDataToSend);
   });
 
-  // WebRTC Signaling Events
-  socket.on('callUser', ({ userToCall, signalData, from, name, callType }) => {
-    io.to(userToCall).emit('incomingCall', { signal: signalData, from, name, callType });
+  // WebRTC Signaling & Call Log Events
+  socket.on('callUser', async ({ userToCall, signalData, from, name, callType }) => {
+    const log = new CallLog({ caller: from, receiver: userToCall, callType, direction: 'outgoing' });
+    await log.save();
+    io.to(userToCall).emit('incomingCall', { signal: signalData, from, name, callType, logId: log._id });
   });
 
-  socket.on('answerCall', (data) => {
+  socket.on('answerCall', async (data) => {
+    const log = new CallLog({ caller: data.from, receiver: data.to, callType: data.callType, direction: 'incoming' });
+    await log.save();
     io.to(data.to).emit('callAccepted', data.signal);
   });
 
