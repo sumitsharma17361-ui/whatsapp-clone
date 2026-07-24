@@ -1,272 +1,331 @@
-require('dotenv').config();
 const express = require('express');
 const http = require('http');
+const { Server } = require('socket.io');
 const mongoose = require('mongoose');
-const socketIo = require('socket.io');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const path = require('path');
-const fs = require('fs');
-
-const User = require('./models/User');
-const Message = require('./models/Message');
-const Status = require('./models/Status');
-const CallLog = require('./models/CallLog');
 
 const app = express();
 const server = http.createServer(app);
-const io = socketIo(server, { cors: { origin: "*" } });
+const io = new Server(server);
 
-const JWT_SECRET = process.env.JWT_SECRET || 'supersecretkey';
-
-const UPLOADS_DIR = path.join(__dirname, 'public', 'uploads');
-if (!fs.existsSync(UPLOADS_DIR)){
-    fs.mkdirSync(UPLOADS_DIR, { recursive: true });
-}
-
-app.use(express.json({ limit: '100mb' }));
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
 
-mongoose.connect(process.env.MONGODB_URI)
-  .then(() => console.log('MongoDB Connected (Calls & Chat Engine Ready)'))
-  .catch(err => console.error('DB Connection Error:', err));
+const MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://admin:admin@cluster0.abcde.mongodb.net/whatsapplite?retryWrites=true&w=majority';
+const JWT_SECRET = process.env.JWT_SECRET || 'SuperSecretJwtKey12345';
 
-app.post('/api/upload', async (req, res) => {
-  try {
-    const { fileName, fileData } = req.body;
-    if (!fileName || !fileData) return res.status(400).json({ error: 'No file data' });
+mongoose.connect(MONGO_URI)
+  .then(() => console.log('MongoDB Connected Successfully'))
+  .catch(err => console.log('DB Connection Error:', err));
 
-    const buffer = Buffer.from(fileData.split(',')[1], 'base64');
-    const uniqueFileName = Date.now() + '-' + fileName;
-    const filePath = path.join(UPLOADS_DIR, uniqueFileName);
-
-    fs.writeFileSync(filePath, buffer);
-    res.json({ fileUrl: `/uploads/${uniqueFileName}` });
-  } catch (err) { res.status(500).json({ error: 'Upload failed' }); }
+// Database Schemas
+const userSchema = new mongoose.Schema({
+  username: { type: String, unique: true, required: true },
+  password: { type: String, required: true },
+  profilePic: { type: String, default: '' },
+  friends: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+  friendRequests: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+  isOnline: { type: Boolean, default: false },
+  lastSeen: { type: Date, default: Date.now }
 });
+const User = mongoose.model('User', userSchema);
 
-app.post('/api/profile-pic', async (req, res) => {
-  try {
-    const authHeader = req.headers['authorization'];
-    const decoded = jwt.verify(authHeader, JWT_SECRET);
-    await User.findByIdAndUpdate(decoded.userId, { profilePic: req.body.profilePic });
-    res.json({ message: "Profile updated" });
-  } catch (err) { res.status(500).json({ error: "Failed" }); }
+const messageSchema = new mongoose.Schema({
+  sender: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  receiver: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  text: String,
+  fileUrl: String,
+  fileName: String,
+  fileType: String,
+  timestamp: { type: Number, default: Date.now },
+  isEncrypted: { type: Boolean, default: true },
+  replyTo: String,
+  status: { type: String, default: 'sent' }
 });
+const Message = mongoose.model('Message', messageSchema);
 
+const statusSchema = new mongoose.Schema({
+  user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  mediaType: { type: String, enum: ['text', 'image', 'video'], default: 'text' },
+  mediaUrl: String,
+  text: String,
+  bgColor: { type: String, default: '#111b21' },
+  createdAt: { type: Date, default: Date.now, expires: 86400 }
+});
+const Status = mongoose.model('Status', statusSchema);
+
+const callLogSchema = new mongoose.Schema({
+  caller: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  receiver: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  callType: { type: String, enum: ['audio', 'video'] },
+  timestamp: { type: Date, default: Date.now }
+});
+const CallLog = mongoose.model('CallLog', callLogSchema);
+
+// Auth Middleware
+const authenticateToken = (req, res, next) => {
+  const token = req.headers.authorization;
+  if (!token) return res.status(401).json({ error: 'Access denied. No token provided.' });
+  try {
+    const verified = jwt.verify(token, JWT_SECRET);
+    req.user = verified;
+    next();
+  } catch (err) {
+    res.status(400).json({ error: 'Invalid token.' });
+  }
+};
+
+// REST API Routes
 app.post('/api/register', async (req, res) => {
   try {
     const { username, password } = req.body;
+    if (!username || !password) return res.status(400).json({ error: 'All fields required' });
+    const existing = await User.findOne({ username });
+    if (existing) return res.status(400).json({ error: 'Username already taken' });
+    
     const hashedPassword = await bcrypt.hash(password, 10);
-    const user = new User({ username, password: hashedPassword });
-    await user.save();
-    res.status(201).json({ message: 'Registered successfully' });
-  } catch (err) { res.status(400).json({ error: 'Username already exists' }); }
+    const newUser = new User({ username, password: hashedPassword });
+    await newUser.save();
+    res.json({ message: 'User registered successfully' });
+  } catch (err) {
+    res.status(500).json({ error: 'Server error' });
+  }
 });
 
 app.post('/api/login', async (req, res) => {
-  const { username, password } = req.body;
-  const user = await User.findOne({ username });
-  if (!user || !(await bcrypt.compare(password, user.password))) {
-    return res.status(400).json({ error: 'Invalid credentials' });
-  }
-  const token = jwt.sign({ userId: user._id, username: user.username }, JWT_SECRET);
-  res.json({ token, userId: user._id, username: user.username, profilePic: user.profilePic });
-});
-
-const auth = (req, res, next) => {
-  const token = req.headers['authorization'];
-  if (!token) return res.status(401).json({ error: 'No token' });
-  jwt.verify(token, JWT_SECRET, (err, decoded) => {
-    if (err) return res.status(401).json({ error: 'Invalid' });
-    req.user = decoded;
-    next();
-  });
-};
-
-app.post('/api/friend-request', auth, async (req, res) => {
-  const { targetUsername } = req.body;
-  const targetUser = await User.findOne({ username: targetUsername });
-  if (!targetUser) return res.status(404).json({ error: 'User not found' });
-  if (targetUser.friendRequests.includes(req.user.userId) || targetUser.friends.includes(req.user.userId)) {
-    return res.status(400).json({ error: 'Already sent or friends' });
-  }
-  targetUser.friendRequests.push(req.user.userId);
-  await targetUser.save();
-  io.to(targetUser._id.toString()).emit('incomingFriendRequest');
-  res.json({ message: 'Request sent' });
-});
-
-app.get('/api/dashboard', auth, async (req, res) => {
-  const user = await User.findById(req.user.userId)
-    .populate('friends', 'username isOnline profilePic lastSeen')
-    .populate('friendRequests', 'username');
-  res.json({ friends: user.friends, friendRequests: user.friendRequests });
-});
-
-app.post('/api/accept-request', auth, async (req, res) => {
-  const { requesterId } = req.body;
-  const user = await User.findById(req.user.userId);
-  const requester = await User.findById(requesterId);
-  user.friendRequests = user.friendRequests.filter(id => id.toString() !== requesterId);
-  user.friends.push(requesterId);
-  requester.friends.push(user._id);
-  await user.save(); await requester.save();
-  io.to(requesterId).emit('requestAccepted');
-  res.json({ message: 'Accepted' });
-});
-
-// STATUS APIs
-app.post('/api/status', auth, async (req, res) => {
   try {
-    const { mediaUrl, mediaType, text, bgColor } = req.body;
-    const status = new Status({ user: req.user.userId, mediaUrl, mediaType, text, bgColor });
-    await status.save();
-    io.emit('statusUpdated');
-    res.status(201).json({ message: 'Status uploaded' });
-  } catch (err) { res.status(500).json({ error: 'Failed' }); }
-});
+    const { username, password } = req.body;
+    const user = await User.findOne({ username });
+    if (!user) return res.status(400).json({ error: 'Invalid username or password' });
 
-app.get('/api/status', auth, async (req, res) => {
-  try {
-    const user = await User.findById(req.user.userId);
-    const visibleUserIds = [...user.friends, req.user.userId];
-    const statuses = await Status.find({ user: { $in: visibleUserIds } })
-      .populate('user', 'username profilePic')
-      .sort('-createdAt');
-    res.json(statuses);
-  } catch (err) { res.status(500).json({ error: 'Failed' }); }
-});
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) return res.status(400).json({ error: 'Invalid username or password' });
 
-app.post('/api/status/view/:statusId', auth, async (req, res) => {
-  try {
-    await Status.findByIdAndUpdate(req.params.statusId, { $addToSet: { viewers: req.user.userId } });
-    res.json({ message: 'Viewed' });
-  } catch (err) { res.status(500).json({ error: 'Failed' }); }
-});
-
-app.delete('/api/status/:statusId', auth, async (req, res) => {
-  try {
-    const status = await Status.findById(req.params.statusId);
-    if (!status) return res.status(404).json({ error: 'Status not found' });
-    if (status.user.toString() !== req.user.userId) return res.status(403).json({ error: 'Unauthorized' });
-    
-    await Status.findByIdAndDelete(req.params.statusId);
-    io.emit('statusUpdated');
-    res.json({ message: 'Status deleted successfully' });
+    const token = jwt.sign({ userId: user._id, username: user.username }, JWT_SECRET);
+    res.json({ token, userId: user._id, username: user.username, profilePic: user.profilePic });
   } catch (err) {
-    res.status(500).json({ error: 'Failed to delete status' });
+    res.status(500).json({ error: 'Server error' });
   }
 });
 
-// CALL LOGS APIs
-app.get('/api/calls', auth, async (req, res) => {
+// Change Password Route
+app.post('/api/change-password', authenticateToken, async (req, res) => {
   try {
-    const logs = await CallLog.find({ $or: [{ caller: req.user.userId }, { receiver: req.user.userId }] })
-      .populate('caller', 'username profilePic')
-      .populate('receiver', 'username profilePic')
-      .sort('-timestamp');
-    res.json(logs);
-  } catch (err) { res.status(500).json({ error: 'Failed' }); }
+    const { oldPassword, newPassword } = req.body;
+    if (!oldPassword || !newPassword) {
+      return res.status(400).json({ error: 'Please provide old and new password' });
+    }
+
+    const user = await User.findById(req.user.userId);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    const isMatch = await bcrypt.compare(oldPassword, user.password);
+    if (!isMatch) {
+      return res.status(400).json({ error: 'Incorrect old password' });
+    }
+
+    user.password = await bcrypt.hash(newPassword, 10);
+    await user.save();
+
+    res.json({ message: 'Password changed successfully!' });
+  } catch (err) {
+    res.status(500).json({ error: 'Server error' });
+  }
 });
 
-app.get('/api/messages/:friendId', auth, async (req, res) => {
-  await Message.updateMany(
-    { sender: req.params.friendId, receiver: req.user.userId, status: { $ne: 'read' } },
-    { $set: { status: 'read' } }
-  );
-  io.to(req.params.friendId).emit('messagesMarkedRead', { by: req.user.userId });
-  const messages = await Message.find({
-    $or: [{ sender: req.user.userId, receiver: req.params.friendId }, { sender: req.params.friendId, receiver: req.user.userId }]
-  }).sort('timestamp');
-  res.json(messages);
+app.post('/api/profile-pic', authenticateToken, async (req, res) => {
+  try {
+    await User.findByIdAndUpdate(req.user.userId, { profilePic: req.body.profilePic });
+    res.json({ success: true });
+  } catch(e) { res.status(500).json({ error: 'Failed' }); }
 });
 
-app.delete('/api/messages/clear/:friendId', auth, async (req, res) => {
+app.get('/api/dashboard', authenticateToken, async (req, res) => {
   try {
+    const user = await User.findById(req.user.userId).populate('friends', 'username profilePic isOnline lastSeen').populate('friendRequests', 'username');
+    res.json({ friends: user.friends, friendRequests: user.friendRequests });
+  } catch(e) { res.status(500).json({ error: 'Server error' }); }
+});
+
+app.post('/api/friend-request', authenticateToken, async (req, res) => {
+  try {
+    const { targetUsername } = req.body;
+    const target = await User.findOne({ username: targetUsername });
+    if (!target) return res.status(404).json({ error: 'User not found' });
+    if (target._id.toString() === req.user.userId) return res.status(400).json({ error: 'Cannot add yourself' });
+    if (target.friendRequests.includes(req.user.userId) || target.friends.includes(req.user.userId)) {
+      return res.status(400).json({ error: 'Already sent request or already friends' });
+    }
+    target.friendRequests.push(req.user.userId);
+    await target.save();
+    io.to(target._id.toString()).emit('incomingFriendRequest');
+    res.json({ message: 'Friend request sent!' });
+  } catch(e) { res.status(500).json({ error: 'Server error' }); }
+});
+
+app.post('/api/accept-request', authenticateToken, async (req, res) => {
+  try {
+    const { requesterId } = req.body;
+    const currentUser = await User.findById(req.user.userId);
+    const requester = await User.findById(requesterId);
+
+    currentUser.friendRequests = currentUser.friendRequests.filter(id => id.toString() !== requesterId);
+    currentUser.friends.push(requesterId);
+    requester.friends.push(req.user.userId);
+
+    await currentUser.save();
+    await requester.save();
+    res.json({ success: true });
+  } catch(e) { res.status(500).json({ error: 'Server error' }); }
+});
+
+app.get('/api/messages/:friendId', authenticateToken, async (req, res) => {
+  try {
+    const { friendId } = req.params;
+    const messages = await Message.find({
+      $or: [
+        { sender: req.user.userId, receiver: friendId },
+        { sender: friendId, receiver: req.user.userId }
+      ]
+    }).sort({ timestamp: 1 });
+    res.json(messages);
+  } catch(e) { res.status(500).json({ error: 'Server error' }); }
+});
+
+app.delete('/api/messages/clear/:friendId', authenticateToken, async (req, res) => {
+  try {
+    const { friendId } = req.params;
     await Message.deleteMany({
-      $or: [{ sender: req.user.userId, receiver: req.params.friendId }, { sender: req.params.friendId, receiver: req.user.userId }]
+      $or: [
+        { sender: req.user.userId, receiver: friendId },
+        { sender: friendId, receiver: req.user.userId }
+      ]
     });
     res.json({ message: 'Chat cleared successfully' });
-  } catch (err) { res.status(500).json({ error: 'Failed' }); }
+  } catch(e) { res.status(500).json({ error: 'Server error' }); }
 });
 
-const onlineUsers = new Map();
+app.post('/api/upload', authenticateToken, (req, res) => {
+  try {
+    const { fileData, fileName } = req.body;
+    res.json({ fileUrl: fileData, fileName });
+  } catch(e) { res.status(500).json({ error: 'Upload failed' }); }
+});
+
+app.get('/api/status', authenticateToken, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.userId);
+    const allowedUsers = [...user.friends, req.user.userId];
+    const statuses = await Status.find({ user: { $in: allowedUsers } }).populate('user', 'username profilePic').sort({ createdAt: -1 });
+    res.json(statuses);
+  } catch(e) { res.status(500).json({ error: 'Server error' }); }
+});
+
+app.post('/api/status', authenticateToken, async (req, res) => {
+  try {
+    const { mediaType, mediaUrl, text, bgColor } = req.body;
+    const newStatus = new Status({ user: req.user.userId, mediaType, mediaUrl, text, bgColor });
+    await newStatus.save();
+    io.emit('statusUpdated');
+    res.json({ success: true });
+  } catch(e) { res.status(500).json({ error: 'Server error' }); }
+});
+
+app.delete('/api/status/:id', authenticateToken, async (req, res) => {
+  try {
+    await Status.findOneAndDelete({ _id: req.params.id, user: req.user.userId });
+    io.emit('statusUpdated');
+    res.json({ success: true });
+  } catch(e) { res.status(500).json({ error: 'Server error' }); }
+});
+
+app.get('/api/calls', authenticateToken, async (req, res) => {
+  try {
+    const logs = await CallLog.find({
+      $or: [{ caller: req.user.userId }, { receiver: req.user.userId }]
+    }).populate('caller receiver', 'username profilePic').sort({ timestamp: -1 }).limit(20);
+    res.json(logs);
+  } catch(e) { res.status(500).json({ error: 'Server error' }); }
+});
+
+// Socket.io Real-time Handling
+const activeSockets = new Map();
+
 io.on('connection', (socket) => {
-  let currentUserId = null;
   socket.on('identify', async (userId) => {
-    currentUserId = userId; onlineUsers.set(userId, socket.id); socket.join(userId);
+    activeSockets.set(userId, socket.id);
+    socket.userId = userId;
     await User.findByIdAndUpdate(userId, { isOnline: true });
-    socket.broadcast.emit('statusChanged', { userId, isOnline: true });
+    io.emit('statusChanged', { userId, isOnline: true });
   });
 
   socket.on('sendMessage', async (data) => {
-    const receiverOnline = onlineUsers.has(data.receiverId);
-    const msg = new Message({ 
-      sender: data.senderId, receiver: data.receiverId, 
-      text: data.text, fileUrl: data.fileUrl, fileName: data.fileName, fileType: data.fileType,
-      status: receiverOnline ? 'delivered' : 'sent', isEncrypted: data.isEncrypted || false
-    });
-    await msg.save();
-    const msgDataToSend = msg.toObject();
-    if(data.replyTo) msgDataToSend.replyTo = data.replyTo;
+    try {
+      const msg = new Message({
+        sender: data.senderId,
+        receiver: data.receiverId,
+        text: data.text,
+        fileUrl: data.fileUrl,
+        fileName: data.fileName,
+        fileType: data.fileType,
+        timestamp: data.timestamp || Date.now(),
+        isEncrypted: data.isEncrypted,
+        replyTo: data.replyTo,
+        status: activeSockets.has(data.receiverId) ? 'delivered' : 'sent'
+      });
+      await msg.save();
 
-    io.to(data.receiverId).emit('receiveMessage', msgDataToSend);
-    io.to(data.senderId).emit('receiveMessage', msgDataToSend);
+      io.to(activeSockets.get(data.receiverId)).emit('receiveMessage', msg);
+      io.to(socket.id).emit('receiveMessage', msg);
+    } catch(e) {}
   });
 
-  // WebRTC Signaling & Call Log Events
-  socket.on('callUser', async ({ userToCall, signalData, from, name, callType }) => {
-    const log = new CallLog({ caller: from, receiver: userToCall, callType, direction: 'outgoing' });
+  socket.on('callUser', async (data) => {
+    const targetSocket = activeSockets.get(data.userToCall);
+    if (targetSocket) {
+      io.to(targetSocket).emit('incomingCall', { signal: data.signalData, from: data.from, name: data.name, callType: data.callType });
+    }
+    const log = new CallLog({ caller: data.from, receiver: data.userToCall, callType: data.callType });
     await log.save();
-    io.to(userToCall).emit('incomingCall', { signal: signalData, from, name, callType, logId: log._id });
   });
 
-  socket.on('answerCall', async (data) => {
-    const log = new CallLog({ caller: data.from, receiver: data.to, callType: data.callType, direction: 'incoming' });
-    await log.save();
-    io.to(data.to).emit('callAccepted', data.signal);
+  socket.on('answerCall', (data) => {
+    const targetSocket = activeSockets.get(data.to);
+    if (targetSocket) {
+      io.to(targetSocket).emit('callAccepted', data.signal);
+    }
   });
 
-  socket.on('iceCandidate', ({ candidate, to }) => {
-    io.to(to).emit('iceCandidate', { candidate });
+  socket.on('iceCandidate', (data) => {
+    const targetSocket = activeSockets.get(data.to);
+    if (targetSocket) {
+      io.to(targetSocket).emit('iceCandidate', { candidate: data.candidate });
+    }
   });
 
-  socket.on('endCall', ({ to }) => {
-    io.to(to).emit('callEnded');
+  socket.on('endCall', (data) => {
+    const targetSocket = activeSockets.get(data.to);
+    if (targetSocket) {
+      io.to(targetSocket).emit('callEnded');
+    }
   });
 
-  socket.on('typing', ({ receiverId, isTyping }) => {
-    io.to(receiverId).emit('typingEmit', { senderId: currentUserId, isTyping });
-  });
-
-  socket.on('reactionEmit', async ({ msgId, emoji, receiverId }) => {
-    await Message.findByIdAndUpdate(msgId, { reaction: emoji });
-    io.to(receiverId).emit('reactionReceived', { msgId, emoji });
-    io.to(currentUserId).emit('reactionReceived', { msgId, emoji });
-  });
-
-  socket.on('deleteMsgEmit', async ({ msgId, receiverId }) => {
-    await Message.findByIdAndUpdate(msgId, { text: '🚫 This message was deleted', fileUrl: null, fileName: null, fileType: null, isEncrypted: false });
-    io.to(receiverId).emit('msgDeleted', { msgId });
-    io.to(currentUserId).emit('msgDeleted', { msgId });
-  });
-
-  socket.on('clearChatEmit', ({ receiverId }) => {
-    io.to(receiverId).emit('chatClearedEvent');
-  });
-
-  socket.on('readEmit', async ({ msgId, senderId }) => {
-     await Message.findByIdAndUpdate(msgId, { status: 'read' });
-     io.to(senderId).emit('msgStatusUpdate', { msgId, status: 'read' });
+  socket.on('typing', (data) => {
+    const targetSocket = activeSockets.get(data.receiverId);
+    if (targetSocket) {
+      io.to(targetSocket).emit('typingEmit', { senderId: socket.userId, isTyping: data.isTyping });
+    }
   });
 
   socket.on('disconnect', async () => {
-    if (currentUserId) {
-      onlineUsers.delete(currentUserId);
-      const now = new Date();
-      await User.findByIdAndUpdate(currentUserId, { isOnline: false, lastSeen: now });
-      io.emit('statusChanged', { userId: currentUserId, isOnline: false, lastSeen: now });
+    if (socket.userId) {
+      activeSockets.delete(socket.userId);
+      const lastSeen = new Date();
+      await User.findByIdAndUpdate(socket.userId, { isOnline: false, lastSeen });
+      io.emit('statusChanged', { userId: socket.userId, isOnline: false, lastSeen });
     }
   });
 });
