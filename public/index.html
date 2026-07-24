@@ -74,9 +74,11 @@
         </div>
       </div>
 
+      <!-- NAVIGATION TABS (CHATS, STATUS, CALLS) -->
       <div class="sidebar-tabs" style="display: flex; background: var(--header-bg); border-bottom: 1px solid var(--border-color);">
-        <button onclick="switchTab('chats')" class="tab-btn active" id="tab-chats-btn" style="flex:1; padding:10px; border:none; background:transparent; font-weight:bold; cursor:pointer; color:var(--text-primary); border-bottom:2px solid #00a884;">Chats</button>
-        <button onclick="switchTab('status')" class="tab-btn" id="tab-status-btn" style="flex:1; padding:10px; border:none; background:transparent; font-weight:bold; cursor:pointer; color:var(--text-secondary);">Status</button>
+        <button onclick="switchTab('chats')" class="tab-btn active" id="tab-chats-btn" style="flex:1; padding:10px; border:none; background:transparent; font-weight:bold; cursor:pointer; color:var(--text-primary); border-bottom:2px solid #00a884; font-size:13px;">Chats</button>
+        <button onclick="switchTab('status')" class="tab-btn" id="tab-status-btn" style="flex:1; padding:10px; border:none; background:transparent; font-weight:bold; cursor:pointer; color:var(--text-secondary); font-size:13px;">Status</button>
+        <button onclick="switchTab('calls')" class="tab-btn" id="tab-calls-btn" style="flex:1; padding:10px; border:none; background:transparent; font-weight:bold; cursor:pointer; color:var(--text-secondary); font-size:13px;">Calls</button>
       </div>
       
       <div class="search-box">
@@ -85,6 +87,7 @@
       </div>
 
       <div class="sidebar-scroll">
+        <!-- CHATS TAB VIEW -->
         <div id="friends-list" class="list-container">
           <div class="section-title">PENDING REQUESTS</div>
           <div id="requests-list" class="list-container"></div>
@@ -92,6 +95,7 @@
           <div id="chats-sublist"></div>
         </div>
 
+        <!-- STATUS TAB VIEW -->
         <div id="status-view-container" class="list-container hidden">
           <input type="file" id="status-file-input" style="display:none;" accept="image/*,video/*" onchange="uploadStatusMedia(this)">
           
@@ -123,6 +127,12 @@
 
           <div class="section-title">RECENT UPDATES</div>
           <div id="statuses-list"></div>
+        </div>
+
+        <!-- CALLS TAB VIEW -->
+        <div id="calls-view-container" class="list-container hidden">
+          <div class="section-title">RECENT CALLS</div>
+          <div id="calls-list"></div>
         </div>
       </div>
     </div>
