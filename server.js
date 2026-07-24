@@ -21,7 +21,6 @@ mongoose.connect(MONGO_URI)
   .then(() => console.log('MongoDB Connected Successfully'))
   .catch(err => console.log('DB Connection Error:', err));
 
-// Database Schemas
 const userSchema = new mongoose.Schema({
   username: { type: String, unique: true, required: true },
   password: { type: String, required: true },
@@ -65,20 +64,17 @@ const callLogSchema = new mongoose.Schema({
 });
 const CallLog = mongoose.model('CallLog', callLogSchema);
 
-// Auth Middleware
 const authenticateToken = (req, res, next) => {
   const token = req.headers.authorization;
-  if (!token) return res.status(401).json({ error: 'Access denied. No token provided.' });
+  if (!token) return res.status(401).json({ error: 'Access denied.' });
   try {
-    const verified = jwt.verify(token, JWT_SECRET);
-    req.user = verified;
+    req.user = jwt.verify(token, JWT_SECRET);
     next();
   } catch (err) {
     res.status(400).json({ error: 'Invalid token.' });
   }
 };
 
-// REST API Routes
 app.post('/api/register', async (req, res) => {
   try {
     const { username, password } = req.body;
@@ -106,31 +102,6 @@ app.post('/api/login', async (req, res) => {
 
     const token = jwt.sign({ userId: user._id, username: user.username }, JWT_SECRET);
     res.json({ token, userId: user._id, username: user.username, profilePic: user.profilePic });
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
-// Change Password Route
-app.post('/api/change-password', authenticateToken, async (req, res) => {
-  try {
-    const { oldPassword, newPassword } = req.body;
-    if (!oldPassword || !newPassword) {
-      return res.status(400).json({ error: 'Please provide old and new password' });
-    }
-
-    const user = await User.findById(req.user.userId);
-    if (!user) return res.status(404).json({ error: 'User not found' });
-
-    const isMatch = await bcrypt.compare(oldPassword, user.password);
-    if (!isMatch) {
-      return res.status(400).json({ error: 'Incorrect old password' });
-    }
-
-    user.password = await bcrypt.hash(newPassword, 10);
-    await user.save();
-
-    res.json({ message: 'Password changed successfully!' });
   } catch (err) {
     res.status(500).json({ error: 'Server error' });
   }
@@ -251,7 +222,6 @@ app.get('/api/calls', authenticateToken, async (req, res) => {
   } catch(e) { res.status(500).json({ error: 'Server error' }); }
 });
 
-// Socket.io Real-time Handling
 const activeSockets = new Map();
 
 io.on('connection', (socket) => {
@@ -281,6 +251,29 @@ io.on('connection', (socket) => {
       io.to(activeSockets.get(data.receiverId)).emit('receiveMessage', msg);
       io.to(socket.id).emit('receiveMessage', msg);
     } catch(e) {}
+  });
+
+  socket.on('deleteMsgEmit', async ({ msgId, receiverId }) => {
+    try {
+      await Message.findByIdAndUpdate(msgId, { text: '🚫 This message was deleted', fileUrl: null, fileName: null });
+      io.to(socket.id).emit('msgDeleted', { msgId });
+      if(activeSockets.has(receiverId)) {
+        io.to(activeSockets.get(receiverId)).emit('msgDeleted', { msgId });
+      }
+    } catch(e) {}
+  });
+
+  socket.on('reactionEmit', ({ msgId, emoji, receiverId }) => {
+    io.to(socket.id).emit('reactionReceived', { msgId, emoji });
+    if(activeSockets.has(receiverId)) {
+      io.to(activeSockets.get(receiverId)).emit('reactionReceived', { msgId, emoji });
+    }
+  });
+
+  socket.on('clearChatEmit', ({ receiverId }) => {
+    if(activeSockets.has(receiverId)) {
+      io.to(activeSockets.get(receiverId)).emit('chatClearedEvent');
+    }
   });
 
   socket.on('callUser', async (data) => {
@@ -332,3 +325,4 @@ io.on('connection', (socket) => {
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+                                                
