@@ -13,6 +13,15 @@ let typingTimeout = null;
 
 let pinnedFriends = JSON.parse(localStorage.getItem('pinnedFriends') || '[]');
 
+let peerConnection;
+let localStream;
+let remoteStream;
+let incomingCallData = null;
+
+const rtcConfig = {
+  iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+};
+
 const mockEncryptionKey = "WhatsAppLiteSecretKey12345"; 
 
 const headers = () => ({
@@ -138,6 +147,27 @@ function showDashboard() {
       renderSingleMessage(msg);
       if(msgSender === String(activeFriendId)) socket.emit('readEmit', { msgId: msg._id, senderId: msgSender });
     }
+  });
+
+  socket.on('incomingCall', (data) => {
+    incomingCallData = data;
+    document.getElementById('incoming-caller-name').innerText = `${data.name} (${data.callType} call)`;
+    document.getElementById('incoming-call-modal').classList.remove('hidden');
+  });
+
+  socket.on('callAccepted', async (signal) => {
+    document.getElementById('call-status-text').innerText = 'Connected';
+    await peerConnection.setRemoteDescription(new RTCSessionDescription(signal));
+  });
+
+  socket.on('iceCandidate', async ({ candidate }) => {
+    if (peerConnection && candidate) {
+      try { await peerConnection.addIceCandidate(new RTCIceCandidate(candidate)); } catch(e){}
+    }
+  });
+
+  socket.on('callEnded', () => {
+    closeCallScreen();
   });
 
   socket.on('typingEmit', ({ senderId, isTyping }) => {
@@ -360,17 +390,136 @@ async function deleteStatus(statusId) {
   }
 }
 
+// WEBRTC CALL FUNCTIONS
+async function startCall(callType) {
+  if(!activeFriendId) return;
+  document.getElementById('call-screen').classList.remove('hidden');
+  document.getElementById('call-username').innerText = document.getElementById('active-friend-name').innerText;
+  document.getElementById('call-avatar').src = document.getElementById('active-friend-avatar').src;
+  document.getElementById('call-status-text').innerText = 'Calling...';
+
+  if(callType === 'video') {
+    document.getElementById('video-container').classList.remove('hidden');
+  }
+
+  try {
+    localStream = await navigator.mediaDevices.getUserMedia({ video: callType === 'video', audio: true });
+    if(callType === 'video') document.getElementById('local-video').srcObject = localStream;
+
+    createPeerConnection(activeFriendId);
+    localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
+
+    const offer = await peerConnection.createOffer();
+    await peerConnection.setLocalDescription(offer);
+
+    socket.emit('callUser', {
+      userToCall: activeFriendId,
+      signalData: offer,
+      from: userId,
+      name: username,
+      callType
+    });
+  } catch (err) {
+    alert("Camera/Mic permission denied or unavailable");
+    closeCallScreen();
+  }
+}
+
+async function acceptIncomingCall() {
+  document.getElementById('incoming-call-modal').classList.add('hidden');
+  document.getElementById('call-screen').classList.remove('hidden');
+  document.getElementById('call-username').innerText = incomingCallData.name;
+  document.getElementById('call-status-text').innerText = 'Connecting...';
+
+  if(incomingCallData.callType === 'video') {
+    document.getElementById('video-container').classList.remove('hidden');
+  }
+
+  try {
+    localStream = await navigator.mediaDevices.getUserMedia({ video: incomingCallData.callType === 'video', audio: true });
+    if(incomingCallData.callType === 'video') document.getElementById('local-video').srcObject = localStream;
+
+    createPeerConnection(incomingCallData.from);
+    localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
+
+    await peerConnection.setRemoteDescription(new RTCSessionDescription(incomingCallData.signal));
+    const answer = await peerConnection.createAnswer();
+    await peerConnection.setLocalDescription(answer);
+
+    socket.emit('answerCall', { signal: answer, to: incomingCallData.from });
+  } catch(e) {
+    closeCallScreen();
+  }
+}
+
+function rejectIncomingCall() {
+  document.getElementById('incoming-call-modal').classList.add('hidden');
+  socket.emit('endCall', { to: incomingCallData.from });
+  incomingCallData = null;
+}
+
+function createPeerConnection(remoteUserId) {
+  peerConnection = new RTCPeerConnection(rtcConfig);
+
+  peerConnection.onicecandidate = (event) => {
+    if (event.candidate) {
+      socket.emit('iceCandidate', { candidate: event.candidate, to: remoteUserId });
+    }
+  };
+
+  peerConnection.ontrack = (event) => {
+    document.getElementById('call-status-text').innerText = 'Connected';
+    remoteStream = event.streams[0];
+    document.getElementById('remote-video').srcObject = remoteStream;
+  };
+}
+
+function endCall() {
+  if (activeFriendId) socket.emit('endCall', { to: activeFriendId });
+  if (incomingCallData) socket.emit('endCall', { to: incomingCallData.from });
+  closeCallScreen();
+}
+
+function closeCallScreen() {
+  if (localStream) {
+    localStream.getTracks().forEach(track => track.stop());
+  }
+  if (peerConnection) {
+    peerConnection.close();
+    peerConnection = null;
+  }
+  document.getElementById('call-screen').classList.add('hidden');
+  document.getElementById('incoming-call-modal').classList.add('hidden');
+  document.getElementById('video-container').classList.add('hidden');
+  document.getElementById('local-video').srcObject = null;
+  document.getElementById('remote-video').srcObject = null;
+  incomingCallData = null;
+}
+
+function toggleMute() {
+  if(localStream) {
+    const audioTrack = localStream.getAudioTracks()[0];
+    audioTrack.enabled = !audioTrack.enabled;
+    document.getElementById('mute-btn').style.background = audioTrack.enabled ? '#ffffff33' : '#ea0038';
+  }
+}
+
+function toggleVideo() {
+  if(localStream) {
+    const videoTrack = localStream.getVideoTracks()[0];
+    if(videoTrack) {
+      videoTrack.enabled = !videoTrack.enabled;
+      document.getElementById('video-toggle-btn').style.background = videoTrack.enabled ? '#ffffff33' : '#ea0038';
+    }
+  }
+}
+
 async function sendFriendRequest() {
   const target = document.getElementById('target-username').value;
   const res = await fetch('/api/friend-request', { method: 'POST', headers: headers(), body: JSON.stringify({ targetUsername: target }) });
   const data = await res.json();
   alert(data.message || data.error);
   document.getElementById('target-username').value = '';
-}
-
-async function acceptFriend(requesterId) {
-  await fetch('/api/accept-request', { method: 'POST', headers: headers(), body: JSON.stringify({ requesterId }) });
-  loadDashboardData();
 }
 
 async function openChat(friendId, friendName, isOnline, avatar, lastSeen) {
