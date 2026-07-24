@@ -69,20 +69,31 @@ function toggleSidebar(show) {
 function switchTab(tab) {
   const chatsBtn = document.getElementById('tab-chats-btn');
   const statusBtn = document.getElementById('tab-status-btn');
+  const callsBtn = document.getElementById('tab-calls-btn');
+  
   const friendsList = document.getElementById('friends-list');
   const statusView = document.getElementById('status-view-container');
+  const callsView = document.getElementById('calls-view-container');
+
+  chatsBtn.style.color = 'var(--text-secondary)'; chatsBtn.style.borderBottom = 'none';
+  statusBtn.style.color = 'var(--text-secondary)'; statusBtn.style.borderBottom = 'none';
+  callsBtn.style.color = 'var(--text-secondary)'; callsBtn.style.borderBottom = 'none';
+
+  friendsList.classList.add('hidden');
+  statusView.classList.add('hidden');
+  callsView.classList.add('hidden');
 
   if(tab === 'chats') {
     chatsBtn.style.color = 'var(--text-primary)'; chatsBtn.style.borderBottom = '2px solid #00a884';
-    statusBtn.style.color = 'var(--text-secondary)'; statusBtn.style.borderBottom = 'none';
     friendsList.classList.remove('hidden');
-    statusView.classList.add('hidden');
-  } else {
+  } else if(tab === 'status') {
     statusBtn.style.color = 'var(--text-primary)'; statusBtn.style.borderBottom = '2px solid #00a884';
-    chatsBtn.style.color = 'var(--text-secondary)'; chatsBtn.style.borderBottom = 'none';
-    friendsList.classList.add('hidden');
     statusView.classList.remove('hidden');
     loadStatuses();
+  } else if(tab === 'calls') {
+    callsBtn.style.color = 'var(--text-primary)'; callsBtn.style.borderBottom = '2px solid #00a884';
+    callsView.classList.remove('hidden');
+    loadCallLogs();
   }
 }
 
@@ -297,6 +308,41 @@ async function loadStatuses() {
   });
 }
 
+async function loadCallLogs() {
+  const res = await fetch('/api/calls', { headers: headers() });
+  const logs = await res.json();
+  const list = document.getElementById('calls-list');
+  list.innerHTML = '';
+
+  if(logs.length === 0) {
+    list.innerHTML = `<div style="padding:20px; text-align:center; color:var(--text-secondary); font-size:13px;">No recent calls</div>`;
+    return;
+  }
+
+  logs.forEach(log => {
+    const isCaller = String(log.caller._id || log.caller) === String(userId);
+    const otherUser = isCaller ? log.receiver : log.caller;
+    if(!otherUser) return;
+
+    const avatar = otherUser.profilePic || 'https://www.w3schools.com/howto/img_avatar.png';
+    const timeStr = new Date(log.timestamp).toLocaleString([], {month: 'short', day: 'numeric', hour: '2-digit', minute:'2-digit'});
+    const arrowIcon = isCaller ? '<span style="color:#25d366;">↗</span>' : '<span style="color:#00a884;">↙</span>';
+    const callIconSymbol = log.callType === 'video' ? '📹' : '📞';
+
+    list.innerHTML += `
+      <div class="list-item">
+        <div style="display:flex; align-items:center; gap:10px;">
+          <img src="${avatar}" style="width:38px; height:38px; border-radius:50%; object-fit:cover;">
+          <div>
+            <span style="font-weight:600; display:block; font-size:14px;">${otherUser.username}</span>
+            <span style="font-size:12px; color:var(--text-secondary);">${arrowIcon} ${timeStr}</span>
+          </div>
+        </div>
+        <span style="font-size:18px; cursor:pointer;" onclick="openChat('${otherUser._id}', '${otherUser.username}', true, '${avatar}', new Date())">${callIconSymbol}</span>
+      </div>`;
+  });
+}
+
 async function openStatusCreator() {
   const text = prompt("Enter status text message:");
   if(text !== null) {
@@ -446,7 +492,7 @@ async function acceptIncomingCall() {
     const answer = await peerConnection.createAnswer();
     await peerConnection.setLocalDescription(answer);
 
-    socket.emit('answerCall', { signal: answer, to: incomingCallData.from });
+    socket.emit('answerCall', { signal: answer, to: incomingCallData.from, from: userId, callType: incomingCallData.callType });
   } catch(e) {
     closeCallScreen();
   }
@@ -520,6 +566,11 @@ async function sendFriendRequest() {
   const data = await res.json();
   alert(data.message || data.error);
   document.getElementById('target-username').value = '';
+}
+
+async function acceptFriend(requesterId) {
+  await fetch('/api/accept-request', { method: 'POST', headers: headers(), body: JSON.stringify({ requesterId }) });
+  loadDashboardData();
 }
 
 async function openChat(friendId, friendName, isOnline, avatar, lastSeen) {
