@@ -315,7 +315,7 @@ async function loadCallLogs() {
   list.innerHTML = '';
 
   if(logs.length === 0) {
-    list.innerHTML = `<div style="padding:20px; text-align:center; color:var(--text-secondary); font-size:13px;">No recent calls</div>`;
+    list.innerHTML = `<div style="padding:30px; text-align:center; color:var(--text-secondary); font-size:13px;">No recent calls</div>`;
     return;
   }
 
@@ -412,9 +412,9 @@ function viewStatus(st) {
     ${isMyStatus ? `<button onclick="deleteStatus('${st._id}')" style="position:absolute; top:28px; right:70px; background:#ea0038; color:white; border:none; padding:6px 12px; border-radius:6px; cursor:pointer; font-weight:bold; z-index:10; font-size:12px;">🗑️ Delete</button>` : ''}
     
     <span onclick="this.parentElement.remove()" style="position:absolute; top:25px; right:25px; font-size:28px; cursor:pointer; z-index:10;">&times;</span>
-    <div style="padding:40px; text-align:center; font-size:20px; font-weight:bold; background:${st.bgColor || '#000'}; width:100%; height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:15px;">
-      ${st.mediaUrl ? (st.mediaType === 'video' ? `<video src="${st.mediaUrl}" controls autoplay style="max-width:90%; max-height:75vh; border-radius:8px;"></video>` : `<img src="${st.mediaUrl}" style="max-width:90%; max-height:75vh; border-radius:8px;">`) : ''}
-      ${st.text ? `<span>${st.text}</span>` : ''}
+    <div style="padding:0; text-align:center; background:${st.bgColor || '#000'}; width:100%; height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; position:relative;">
+      ${st.mediaUrl ? (st.mediaType === 'video' ? `<video src="${st.mediaUrl}" controls autoplay style="width:100%; height:100%; object-fit:contain; background:#000;"></video>` : `<img src="${st.mediaUrl}" style="width:100%; height:100%; object-fit:contain; background:#000;">`) : ''}
+      ${st.text ? `<div style="position:absolute; bottom:40px; left:20px; right:20px; background:rgba(0,0,0,0.6); padding:10px; border-radius:8px; font-size:18px;">${st.text}</div>` : ''}
     </div>
   `;
   document.body.appendChild(modal);
