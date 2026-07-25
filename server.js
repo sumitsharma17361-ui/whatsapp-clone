@@ -19,10 +19,6 @@ const io = socketIo(server, { cors: { origin: "*" } });
 
 const JWT_SECRET = process.env.JWT_SECRET || 'supersecretkey';
 
-// OneSignal Credentials
-const ONESIGNAL_APP_ID = "45011a3c-d888-453d-a7f3-b7a8e436c09d";
-const ONESIGNAL_REST_API_KEY = "Os_v2_app_iuarupgyrbct3j7tw6uoinwatwi6dfkac74udm4fmcr2hewe6qzyxy2ueiaufcte77kptuzp4oghr75rfsth2hjprbwbtdrzwlpmpta";
-
 const UPLOADS_DIR = path.join(__dirname, 'public', 'uploads');
 if (!fs.existsSync(UPLOADS_DIR)){
     fs.mkdirSync(UPLOADS_DIR, { recursive: true });
@@ -34,39 +30,6 @@ app.use(express.static(path.join(__dirname, 'public')));
 mongoose.connect(process.env.MONGODB_URI)
   .then(() => console.log('MongoDB Connected (Calls & Chat Engine Ready)'))
   .catch(err => console.error('DB Connection Error:', err));
-
-// Direct Database Push Notification Helper (Using OneSignal Player/Subscription ID directly from DB)
-async function sendPushNotification(subscriptionId, heading, message) {
-  try {
-    if (!subscriptionId) {
-      console.log("Skipping push notification: No subscription ID found for user.");
-      return;
-    }
-    console.log(`Sending direct OneSignal push to player_id: ${subscriptionId}`);
-    const headers = {
-      "Content-Type": "application/json; charset=utf-8",
-      "Authorization": `Basic ${ONESIGNAL_REST_API_KEY}`
-    };
-
-    const body = {
-      app_id: ONESIGNAL_APP_ID,
-      include_player_ids: [subscriptionId],
-      headings: { "en": heading },
-      contents: { "en": message }
-    };
-
-    const response = await fetch("https://onesignal.com/api/v1/notifications", {
-      method: "POST",
-      headers: headers,
-      body: JSON.stringify(body)
-    });
-    
-    const result = await response.json();
-    console.log("Direct Push Notification Sent Response:", JSON.stringify(result));
-  } catch (err) {
-    console.error("Push Notification Error:", err);
-  }
-}
 
 app.post('/api/upload', async (req, res) => {
   try {
@@ -121,7 +84,6 @@ const auth = (req, res, next) => {
   });
 };
 
-// CHANGE PASSWORD API ROUTE
 app.post('/api/change-password', auth, async (req, res) => {
   try {
     const { oldPassword, newPassword } = req.body;
@@ -178,7 +140,6 @@ app.post('/api/accept-request', auth, async (req, res) => {
   res.json({ message: 'Accepted' });
 });
 
-// STATUS APIs
 app.post('/api/status', auth, async (req, res) => {
   try {
     const { mediaUrl, mediaType, text, bgColor } = req.body;
@@ -227,7 +188,6 @@ app.delete('/api/status/:statusId', auth, async (req, res) => {
   }
 });
 
-// CALL LOGS APIs
 app.get('/api/calls', auth, async (req, res) => {
   try {
     const logs = await CallLog.find({ $or: [{ caller: req.user.userId }, { receiver: req.user.userId }] })
@@ -263,22 +223,12 @@ const onlineUsers = new Map();
 io.on('connection', (socket) => {
   let currentUserId = null;
   
-  socket.on('identify', async (data) => {
-    // data can be just userId string, or an object containing userId and onesignal subscriptionId
-    const userId = typeof data === 'object' ? data.userId : data;
-    const subscriptionId = typeof data === 'object' ? data.subscriptionId : null;
-
+  socket.on('identify', async (userId) => {
     if (!userId) return;
     currentUserId = userId; 
     onlineUsers.set(userId, socket.id); 
     socket.join(userId);
-
-    // Update online status and save push subscription token directly in MongoDB if available
-    const updateFields = { isOnline: true };
-    if (subscriptionId) {
-      updateFields.onesignalSubscriptionId = subscriptionId;
-    }
-    await User.findByIdAndUpdate(userId, updateFields);
+    await User.findByIdAndUpdate(userId, { isOnline: true });
     socket.broadcast.emit('statusChanged', { userId, isOnline: true });
   });
 
@@ -297,30 +247,8 @@ io.on('connection', (socket) => {
 
     io.to(data.receiverId).emit('receiveMessage', msgDataToSend);
     io.to(data.senderId).emit('receiveMessage', msgDataToSend);
-
-    // Agar receiver online nahi hai, toh Database se uska subscription ID fetch karke direct push notification bhejein
-    if (!receiverOnline) {
-      console.log(`Receiver ${data.receiverId} is offline. Fetching token from DB for direct push.`);
-      try {
-        const receiverUser = await User.findById(data.receiverId);
-        if (receiverUser && receiverUser.onesignalSubscriptionId) {
-          await sendPushNotification(
-            receiverUser.onesignalSubscriptionId, 
-            "New Message", 
-            data.text ? (data.text.length > 50 ? data.text.substring(0, 50) + '...' : data.text) : "Sent an attachment"
-          );
-        } else {
-          console.log("No onesignalSubscriptionId found in database for receiver.");
-        }
-      } catch (dbErr) {
-        console.error("Error fetching receiver token from DB:", dbErr);
-      }
-    } else {
-      console.log(`Receiver ${data.receiverId} is online, skipping push notification.`);
-    }
   });
 
-  // WebRTC Signaling & Call Log Events
   socket.on('callUser', async ({ userToCall, signalData, from, name, callType }) => {
     const log = new CallLog({ caller: from, receiver: userToCall, callType, direction: 'outgoing' });
     await log.save();
@@ -376,6 +304,6 @@ io.on('connection', (socket) => {
   });
 });
 
-const PORT = process.env.PORT || `3000`;
+const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
-        
+                               
