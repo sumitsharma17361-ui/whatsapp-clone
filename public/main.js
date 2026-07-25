@@ -49,7 +49,18 @@ window.onload = () => {
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible" && socket && userId) {
       socket.connect();
-      socket.emit('identify', userId);
+      if (window.OneSignalDeferred) {
+        window.OneSignalDeferred.push(async function(OneSignal) {
+          try {
+            let subId = OneSignal.User.PushSubscription.id;
+            socket.emit('identify', { userId: userId, subscriptionId: subId });
+          } catch(e) {
+            socket.emit('identify', { userId: userId, subscriptionId: null });
+          }
+        });
+      } else {
+        socket.emit('identify', { userId: userId, subscriptionId: null });
+      }
       loadDashboardData();
     }
   });
@@ -138,7 +149,6 @@ async function authAction(type) {
       localStorage.setItem('username', data.username);
       if(data.profilePic) localStorage.setItem('profilePic', data.profilePic);
       
-      // Map OneSignal External User ID on successful login
       if (window.OneSignalDeferred) {
         window.OneSignalDeferred.push(async function(OneSignal) {
           await OneSignal.login(data.userId);
@@ -202,14 +212,12 @@ function showDashboard() {
   document.getElementById('app-screen').classList.remove('hidden');
   document.getElementById('current-user-display').innerText = username;
   
-  // Ensure OneSignal login mapping is also set if already logged in via session
   if (window.OneSignalDeferred && userId) {
     window.OneSignalDeferred.push(async function(OneSignal) {
       await OneSignal.login(userId);
     });
   }
 
-  // Robust Socket Initialization with Auto-Reconnect Config
   socket = io({
     reconnection: true,
     reconnectionAttempts: Infinity,
@@ -217,8 +225,16 @@ function showDashboard() {
     timeout: 20000
   });
 
-  socket.on('connect', () => {
-    socket.emit('identify', userId);
+  socket.on('connect', async () => {
+    let subId = null;
+    if (window.OneSignalDeferred) {
+      window.OneSignalDeferred.push(async function(OneSignal) {
+        try {
+          subId = OneSignal.User.PushSubscription.id;
+        } catch(e) {}
+      });
+    }
+    socket.emit('identify', { userId: userId, subscriptionId: subId });
   });
 
   initPeerJS();
@@ -801,6 +817,7 @@ function setReply(msgText) {
   document.getElementById('reply-preview-bar').classList.remove('hidden');
   document.getElementById('message-input').focus();
 }
+
 function cancelReply() {
   replyMessageData = null;
   document.getElementById('reply-preview-bar').classList.add('hidden');
@@ -828,21 +845,24 @@ function toggleInChatSearch() {
 function searchInChat(query) {
   const msgs = document.querySelectorAll('.msg');
   msgs.forEach(m => {
-    if(query && m.innerText.toLowerCase().includes(query.toLowerCase())) m.classList.add('highlight');
-    else m.classList.remove('highlight');
+    if(query && m.innerText.toLowerCase().includes(query.toLowerCase())) {
+      m.style.background = 'rgba(0, 168, 132, 0.2)';
+    } else {
+      m.style.background = '';
+    }
   });
 }
 
 async function clearFullChat() {
-  if (!activeFriendId) return;
-  if (confirm("Are you sure you want to clear this entire chat?")) {
+  if(!activeFriendId) return;
+  if(confirm("Are you sure you want to clear this entire chat?")) {
     try {
       const res = await fetch(`/api/messages/clear/${activeFriendId}`, {
         method: 'DELETE',
         headers: headers()
       });
       const data = await res.json();
-      if (data.message) {
+      if(data.message) {
         document.getElementById('messages-display').innerHTML = '';
         socket.emit('clearChatEmit', { receiverId: activeFriendId });
       } else { alert("Failed to clear chat"); }
@@ -854,30 +874,38 @@ function setupMic() {
   const micBtn = document.getElementById('mic-btn');
   if(!micBtn) return;
   micBtn.onclick = async () => {
-    if (!isRecording) {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      mediaRecorder = new MediaRecorder(stream);
-      audioChunks = [];
-      mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
-      mediaRecorder.onstop = async () => {
-        const audioBlob = new Blob(audioChunks, { type: 'audio/mp3' });
-        const reader = new FileReader();
-        reader.onloadend = async () => {
-           selectedFile = { name: `Voice-${Date.now()}.mp3`, type: 'audio/mp3', data: reader.result };
-           document.getElementById('message-input').value = `🎙️ Voice Note (Ready)`;
+    if(!isRecording) {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        mediaRecorder = new MediaRecorder(stream);
+        audioChunks = [];
+        mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
+        mediaRecorder.onstop = async () => {
+          const audioBlob = new Blob(audioChunks, { type: 'audio/mp3' });
+          const reader = new FileReader();
+          reader.onload = async () => {
+            selectedFile = { name: `Voice-${Date.now()}.mp3`, type: 'audio/mp3', data: reader.result };
+            document.getElementById('message-input').value = '🎤 Voice Note (Ready)';
+          };
+          reader.readAsDataURL(audioBlob);
         };
-        reader.readAsDataURL(audioBlob);
-      };
-      mediaRecorder.start(); isRecording = true; micBtn.innerText = "🛑";
-    } else { mediaRecorder.stop(); isRecording = false; micBtn.innerText = "🎙️"; }
+        mediaRecorder.start();
+        isRecording = true;
+        micBtn.innerText = '⏹️';
+      } catch(e) { alert("Microphone access denied"); }
+    } else {
+      mediaRecorder.stop();
+      isRecording = false;
+      micBtn.innerText = '🎙️';
+    }
   };
 }
 
 function handleFileSelect(input) {
   const file = input.files[0];
-  if (!file) return;
+  if(!file) return;
   const reader = new FileReader();
-  reader.onload = function(e) {
+  reader.onload = (e) => {
     selectedFile = { name: file.name, type: file.type, data: e.target.result };
     document.getElementById('message-input').value = `📎 ${file.name} (Ready)`;
   };
@@ -1006,7 +1034,11 @@ async function sendMessage() {
           let cipherText = textToSend ? encryptText(textToSend, mockEncryptionKey) : "";
           socket.emit('sendMessage', { senderId: userId, receiverId: activeFriendId, text: cipherText, fileUrl: response.fileUrl, fileName: filePayload.name, fileType: filePayload.type, timestamp: timestamp, isEncrypted: true, replyTo: currentReplyTo });
         }
-      } else { alert("File upload failed."); const temp = document.getElementById(`temp-${timestamp}`); if(temp) temp.remove(); }
+      } else { 
+        alert("File upload failed."); 
+        const temp = document.getElementById(`temp-${timestamp}`); 
+        if(temp) temp.remove(); 
+      }
     };
     xhr.send(JSON.stringify({ fileName: filePayload.name, fileData: filePayload.data }));
 
@@ -1017,4 +1049,7 @@ async function sendMessage() {
   }
 }
 
-function logout() { localStorage.clear(); window.location.reload(); }
+function logout() { 
+  localStorage.clear(); 
+  window.location.reload(); 
+}
