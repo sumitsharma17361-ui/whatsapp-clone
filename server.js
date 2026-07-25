@@ -20,8 +20,9 @@ const io = socketIo(server, { cors: { origin: "*" } });
 
 const JWT_SECRET = process.env.JWT_SECRET || 'supersecretkey';
 
-// Real Gemini API Key integration
-const genAI = new GoogleGenerativeAI("AQ.Ab8RN6LM5_oqTG5GVQa_oMD3OGtHpri-eZJ9H3CKhv5VXOteHQ");
+// Real Gemini API Key integration with fallback
+const geminiApiKey = process.env.GEMINI_API_KEY || "AQ.Ab8RN6LM5_oqTG5GVQa_oMD3OGtHpri-eZJ9H3CKhv5VXOteHQ";
+const genAI = new GoogleGenerativeAI(geminiApiKey);
 
 const UPLOADS_DIR = path.join(__dirname, 'public', 'uploads');
 if (!fs.existsSync(UPLOADS_DIR)){
@@ -326,3 +327,4 @@ io.on('connection', (socket) => {
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+        
