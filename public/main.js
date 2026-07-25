@@ -137,6 +137,14 @@ async function authAction(type) {
       localStorage.setItem('userId', data.userId);
       localStorage.setItem('username', data.username);
       if(data.profilePic) localStorage.setItem('profilePic', data.profilePic);
+      
+      // Map OneSignal External User ID on successful login
+      if (window.OneSignalDeferred) {
+        window.OneSignalDeferred.push(async function(OneSignal) {
+          await OneSignal.login(data.userId);
+        });
+      }
+
       window.location.reload();
     } else { 
       alert('Registered successfully! Now click Login.'); 
@@ -194,6 +202,13 @@ function showDashboard() {
   document.getElementById('app-screen').classList.remove('hidden');
   document.getElementById('current-user-display').innerText = username;
   
+  // Ensure OneSignal login mapping is also set if already logged in via session
+  if (window.OneSignalDeferred && userId) {
+    window.OneSignalDeferred.push(async function(OneSignal) {
+      await OneSignal.login(userId);
+    });
+  }
+
   // Robust Socket Initialization with Auto-Reconnect Config
   socket = io({
     reconnection: true,
