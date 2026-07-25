@@ -45,36 +45,16 @@ window.onload = () => {
     document.body.classList.add('dark-theme');
   }
 
-  // Handle app visibility change to re-identify socket when app comes back to foreground
+  // Instant reconnect & refresh when app comes to foreground
   document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible" && socket && userId) {
-      socket.connect();
-      function sendTokenWithRetry(retries = 5) {
-        if (window.OneSignalDeferred) {
-          window.OneSignalDeferred.push(async function(OneSignal) {
-            try {
-              let subId = OneSignal.User.PushSubscription.id;
-              if (subId) {
-                socket.emit('identify', { userId: userId, subscriptionId: subId });
-              } else if (retries > 0) {
-                setTimeout(() => sendTokenWithRetry(retries - 1), 2000);
-              } else {
-                socket.emit('identify', { userId: userId, subscriptionId: null });
-              }
-            } catch(e) {
-              if (retries > 0) {
-                setTimeout(() => sendTokenWithRetry(retries - 1), 2000);
-              } else {
-                socket.emit('identify', { userId: userId, subscriptionId: null });
-              }
-            }
-          });
-        } else {
-          socket.emit('identify', { userId: userId, subscriptionId: null });
-        }
+    if (document.visibilityState === "visible" && userId) {
+      if (!socket || !socket.connected) {
+        showDashboard();
+      } else {
+        socket.emit('identify', userId);
+        loadDashboardData();
+        if (activeFriendId) openChat(activeFriendId, document.getElementById('active-friend-name').innerText, true, document.getElementById('active-friend-avatar').src, new Date());
       }
-      sendTokenWithRetry();
-      loadDashboardData();
     }
   });
 };
@@ -161,13 +141,6 @@ async function authAction(type) {
       localStorage.setItem('userId', data.userId);
       localStorage.setItem('username', data.username);
       if(data.profilePic) localStorage.setItem('profilePic', data.profilePic);
-      
-      if (window.OneSignalDeferred) {
-        window.OneSignalDeferred.push(async function(OneSignal) {
-          await OneSignal.login(data.userId);
-        });
-      }
-
       window.location.reload();
     } else { 
       alert('Registered successfully! Now click Login.'); 
@@ -194,11 +167,8 @@ async function changePassword() {
       body: JSON.stringify({ oldPassword, newPassword })
     });
     const data = await res.json();
-    if (data.error) {
-      alert(data.error);
-    } else {
-      alert(data.message);
-    }
+    if (data.error) alert(data.error);
+    else alert(data.message);
   } catch (err) {
     alert("Failed to change password. Try again.");
   }
@@ -225,46 +195,19 @@ function showDashboard() {
   document.getElementById('app-screen').classList.remove('hidden');
   document.getElementById('current-user-display').innerText = username;
   
-  if (window.OneSignalDeferred && userId) {
-    window.OneSignalDeferred.push(async function(OneSignal) {
-      await OneSignal.login(userId);
-    });
+  if (socket) {
+    socket.disconnect();
   }
 
   socket = io({
     reconnection: true,
     reconnectionAttempts: Infinity,
-    reconnectionDelay: 1000,
-    timeout: 20000
+    reconnectionDelay: 500,
+    timeout: 10000
   });
 
-  socket.on('connect', async () => {
-    function sendTokenWithRetry(retries = 5) {
-      if (window.OneSignalDeferred) {
-        window.OneSignalDeferred.push(async function(OneSignal) {
-          try {
-            let subId = OneSignal.User.PushSubscription.id;
-            if (subId) {
-              socket.emit('identify', { userId: userId, subscriptionId: subId });
-              console.log("OneSignal subscription ID sent to server:", subId);
-            } else if (retries > 0) {
-              setTimeout(() => sendTokenWithRetry(retries - 1), 2000);
-            } else {
-              socket.emit('identify', { userId: userId, subscriptionId: null });
-            }
-          } catch(e) {
-            if (retries > 0) {
-              setTimeout(() => sendTokenWithRetry(retries - 1), 2000);
-            } else {
-              socket.emit('identify', { userId: userId, subscriptionId: null });
-            }
-          }
-        });
-      } else {
-        socket.emit('identify', { userId: userId, subscriptionId: null });
-      }
-    }
-    sendTokenWithRetry();
+  socket.on('connect', () => {
+    socket.emit('identify', userId);
   });
 
   initPeerJS();
@@ -331,6 +274,7 @@ function showDashboard() {
 
 // --- PEERJS CALL SETUP & ADVANCED FEATURES ---
 function initPeerJS() {
+  if (peer) return;
   peer = new Peer(userId, {
     host: '0.peerjs.com',
     port: 443,
@@ -512,9 +456,7 @@ async function switchCamera() {
     const videoTrack = newStream.getVideoTracks()[0];
     if (currentPeerCall && currentPeerCall.peerConnection) {
       const sender = currentPeerCall.peerConnection.getSenders().find(s => s.track && s.track.kind === 'video');
-      if (sender) {
-        sender.replaceTrack(videoTrack);
-      }
+      if (sender) sender.replaceTrack(videoTrack);
     }
 
     localStream.getVideoTracks()[0].stop();
@@ -527,9 +469,7 @@ async function switchCamera() {
 
 function rejectIncomingCall() {
   document.getElementById('incoming-call-modal').classList.add('hidden');
-  if(window.incomingPeerCallObj) {
-    window.incomingPeerCallObj.close();
-  }
+  if(window.incomingPeerCallObj) window.incomingPeerCallObj.close();
   window.incomingPeerCallObj = null;
 }
 
@@ -752,7 +692,6 @@ function viewStatus(st) {
   fetch(`/api/status/view/${st._id}`, { method: 'POST', headers: headers() });
 
   const isMyStatus = String(st.user._id || st.user) === String(userId);
-
   const existingModal = document.querySelector('.status-story-modal');
   if (existingModal) existingModal.remove();
 
@@ -779,11 +718,8 @@ function viewStatus(st) {
       <img src="${st.user.profilePic || 'https://www.w3schools.com/howto/img_avatar.png'}" style="width:40px; height:40px; border-radius:50%; object-fit:cover; border:2px solid #00a884;">
       <span style="font-weight:bold; font-size:16px; color:white;">${st.user.username}</span>
     </div>
-    
     ${isMyStatus ? `<button onclick="deleteStatus('${st._id}')" style="position:absolute; top:30px; right:70px; background:#ea0038; color:white; border:none; padding:8px 14px; border-radius:6px; cursor:pointer; font-weight:bold; z-index:10; font-size:13px;">🗑️ Delete</button>` : ''}
-    
     <span onclick="this.parentElement.remove()" style="position:absolute; top:20px; right:25px; font-size:36px; cursor:pointer; z-index:10; color:white;">&times;</span>
-    
     <div style="background:${st.bgColor || '#111b21'}; width:100%; height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; position:relative; padding:20px;">
       ${mediaHtml}
       ${textHtml}
@@ -794,10 +730,7 @@ function viewStatus(st) {
 
 async function deleteStatus(statusId) {
   if (confirm("Are you sure you want to delete this status?")) {
-    const res = await fetch(`/api/status/${statusId}`, {
-      method: 'DELETE',
-      headers: headers()
-    });
+    const res = await fetch(`/api/status/${statusId}`, { method: 'DELETE', headers: headers() });
     if (res.ok) {
       alert("Status deleted successfully!");
       document.querySelector('.status-story-modal').remove();
@@ -887,10 +820,7 @@ async function clearFullChat() {
   if(!activeFriendId) return;
   if(confirm("Are you sure you want to clear this entire chat?")) {
     try {
-      const res = await fetch(`/api/messages/clear/${activeFriendId}`, {
-        method: 'DELETE',
-        headers: headers()
-      });
+      const res = await fetch(`/api/messages/clear/${activeFriendId}`, { method: 'DELETE', headers: headers() });
       const data = await res.json();
       if(data.message) {
         document.getElementById('messages-display').innerHTML = '';
@@ -1081,5 +1011,6 @@ async function sendMessage() {
 
 function logout() { 
   localStorage.clear(); 
-  window.location.reload();
+  window.location.reload(); 
 }
+                                                        }
