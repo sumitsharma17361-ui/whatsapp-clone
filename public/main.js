@@ -13,14 +13,11 @@ let typingTimeout = null;
 
 let pinnedFriends = JSON.parse(localStorage.getItem('pinnedFriends') || '[]');
 
-let peerConnection;
-let localStream;
-let remoteStream;
-let incomingCallData = null;
-
-const rtcConfig = {
-  iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
-};
+// PeerJS Variables for Fully Functional Calling
+let peer = null;
+let currentPeerCall = null;
+let localStream = null;
+let remoteStream = null;
 
 const mockEncryptionKey = "WhatsAppLiteSecretKey12345"; 
 
@@ -187,6 +184,9 @@ function showDashboard() {
   socket = io();
   socket.emit('identify', userId);
 
+  // Initialize PeerJS for Direct & Stable Calling
+  initPeerJS();
+
   socket.on('receiveMessage', (msg) => {
     const msgSender = String(msg.sender._id || msg.sender);
     const msgReceiver = String(msg.receiver._id || msg.receiver);
@@ -202,27 +202,6 @@ function showDashboard() {
       renderSingleMessage(msg);
       if(msgSender === String(activeFriendId)) socket.emit('readEmit', { msgId: msg._id, senderId: msgSender });
     }
-  });
-
-  socket.on('incomingCall', (data) => {
-    incomingCallData = data;
-    document.getElementById('incoming-caller-name').innerText = `${data.name} (${data.callType} call)`;
-    document.getElementById('incoming-call-modal').classList.remove('hidden');
-  });
-
-  socket.on('callAccepted', async (signal) => {
-    document.getElementById('call-status-text').innerText = 'Connected';
-    await peerConnection.setRemoteDescription(new RTCSessionDescription(signal));
-  });
-
-  socket.on('iceCandidate', async ({ candidate }) => {
-    if (peerConnection && candidate) {
-      try { await peerConnection.addIceCandidate(new RTCIceCandidate(candidate)); } catch(e){}
-    }
-  });
-
-  socket.on('callEnded', () => {
-    closeCallScreen();
   });
 
   socket.on('typingEmit', ({ senderId, isTyping }) => {
@@ -267,6 +246,163 @@ function showDashboard() {
   socket.on('incomingFriendRequest', () => loadDashboardData());
   loadDashboardData();
 }
+
+// --- PEERJS CALL SETUP ---
+function initPeerJS() {
+  peer = new Peer(userId, {
+    host: '0.peerjs.com',
+    port: 443,
+    secure: true
+  });
+
+  peer.on('open', (id) => {
+    console.log('Peer connected with ID:', id);
+  });
+
+  // Incoming Call Handler
+  peer.on('call', async (call) => {
+    currentPeerCall = call;
+    const callType = call.metadata && call.metadata.callType ? call.metadata.callType : 'audio';
+    const callerName = call.metadata && call.metadata.callerName ? call.metadata.callerName : 'Friend';
+
+    document.getElementById('incoming-caller-name').innerText = `${callerName} (${callType} call)`;
+    document.getElementById('incoming-call-modal').classList.remove('hidden');
+
+    // Save caller metadata for acceptance
+    window.incomingPeerCallObj = call;
+    window.incomingCallType = callType;
+  });
+
+  peer.on('error', (err) => {
+    console.error('PeerJS error:', err);
+  });
+}
+
+async function startCall(callType) {
+  if(!activeFriendId) return;
+  document.getElementById('call-screen').classList.remove('hidden');
+  document.getElementById('call-username').innerText = document.getElementById('active-friend-name').innerText;
+  document.getElementById('call-avatar').src = document.getElementById('active-friend-avatar').src;
+  document.getElementById('call-status-text').innerText = 'Calling...';
+
+  if(callType === 'video') {
+    document.getElementById('video-container').classList.remove('hidden');
+  }
+
+  try {
+    localStream = await navigator.mediaDevices.getUserMedia({ video: callType === 'video', audio: true });
+    if(callType === 'video') document.getElementById('local-video').srcObject = localStream;
+
+    // Call target user via PeerJS
+    const call = peer.call(activeFriendId, localStream, {
+      metadata: { callType: callType, callerName: username }
+    });
+    currentPeerCall = call;
+
+    call.on('stream', (remoteStreamData) => {
+      document.getElementById('call-status-text').innerText = 'Connected';
+      remoteStream = remoteStreamData;
+      document.getElementById('remote-video').srcObject = remoteStream;
+    });
+
+    call.on('close', () => {
+      closeCallScreen();
+    });
+
+    call.on('error', (err) => {
+      console.error("Call error:", err);
+      closeCallScreen();
+    });
+  } catch (err) {
+    alert("Camera/Mic permission denied or unavailable");
+    closeCallScreen();
+  }
+}
+
+async function acceptIncomingCall() {
+  document.getElementById('incoming-call-modal').classList.add('hidden');
+  document.getElementById('call-screen').classList.remove('hidden');
+  const callType = window.incomingCallType || 'audio';
+  document.getElementById('call-status-text').innerText = 'Connecting...';
+
+  if(callType === 'video') {
+    document.getElementById('video-container').classList.remove('hidden');
+  }
+
+  try {
+    localStream = await navigator.mediaDevices.getUserMedia({ video: callType === 'video', audio: true });
+    if(callType === 'video') document.getElementById('local-video').srcObject = localStream;
+
+    const call = window.incomingPeerCallObj;
+    if(call) {
+      call.answer(localStream);
+      currentPeerCall = call;
+
+      call.on('stream', (remoteStreamData) => {
+        document.getElementById('call-status-text').innerText = 'Connected';
+        remoteStream = remoteStreamData;
+        document.getElementById('remote-video').srcObject = remoteStream;
+      });
+
+      call.on('close', () => {
+        closeCallScreen();
+      });
+    }
+  } catch(e) {
+    alert("Camera/Mic permission denied");
+    closeCallScreen();
+  }
+}
+
+function rejectIncomingCall() {
+  document.getElementById('incoming-call-modal').classList.add('hidden');
+  if(window.incomingPeerCallObj) {
+    window.incomingPeerCallObj.close();
+  }
+  window.incomingPeerCallObj = null;
+}
+
+function endCall() {
+  if (currentPeerCall) {
+    currentPeerCall.close();
+    currentPeerCall = null;
+  }
+  closeCallScreen();
+}
+
+function closeCallScreen() {
+  if (localStream) {
+    localStream.getTracks().forEach(track => track.stop());
+    localStream = null;
+  }
+  document.getElementById('call-screen').classList.add('hidden');
+  document.getElementById('incoming-call-modal').classList.add('hidden');
+  document.getElementById('video-container').classList.add('hidden');
+  document.getElementById('local-video').srcObject = null;
+  document.getElementById('remote-video').srcObject = null;
+  window.incomingPeerCallObj = null;
+}
+
+function toggleMute() {
+  if(localStream) {
+    const audioTrack = localStream.getAudioTracks()[0];
+    if(audioTrack) {
+      audioTrack.enabled = !audioTrack.enabled;
+      document.getElementById('mute-btn').style.background = audioTrack.enabled ? '#ffffff33' : '#ea0038';
+    }
+  }
+}
+
+function toggleVideo() {
+  if(localStream) {
+    const videoTrack = localStream.getVideoTracks()[0];
+    if(videoTrack) {
+      videoTrack.enabled = !videoTrack.enabled;
+      document.getElementById('video-toggle-btn').style.background = videoTrack.enabled ? '#ffffff33' : '#ea0038';
+    }
+  }
+}
+// --- END OF PEERJS CALL SETUP ---
 
 function encryptText(text, key) { return btoa(encodeURIComponent(text)); }
 function decryptText(encodedText, key) { try { return decodeURIComponent(atob(encodedText)); } catch(e) { return "🔒 Decryption Failed"; } }
@@ -495,130 +631,6 @@ async function deleteStatus(statusId) {
       loadStatuses();
     } else {
       alert("Failed to delete status");
-    }
-  }
-}
-
-// WEBRTC CALL FUNCTIONS
-async function startCall(callType) {
-  if(!activeFriendId) return;
-  document.getElementById('call-screen').classList.remove('hidden');
-  document.getElementById('call-username').innerText = document.getElementById('active-friend-name').innerText;
-  document.getElementById('call-avatar').src = document.getElementById('active-friend-avatar').src;
-  document.getElementById('call-status-text').innerText = 'Calling...';
-
-  if(callType === 'video') {
-    document.getElementById('video-container').classList.remove('hidden');
-  }
-
-  try {
-    localStream = await navigator.mediaDevices.getUserMedia({ video: callType === 'video', audio: true });
-    if(callType === 'video') document.getElementById('local-video').srcObject = localStream;
-
-    createPeerConnection(activeFriendId);
-    localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
-
-    const offer = await peerConnection.createOffer();
-    await peerConnection.setLocalDescription(offer);
-
-    socket.emit('callUser', {
-      userToCall: activeFriendId,
-      signalData: offer,
-      from: userId,
-      name: username,
-      callType
-    });
-  } catch (err) {
-    alert("Camera/Mic permission denied or unavailable");
-    closeCallScreen();
-  }
-}
-
-async function acceptIncomingCall() {
-  document.getElementById('incoming-call-modal').classList.add('hidden');
-  document.getElementById('call-screen').classList.remove('hidden');
-  document.getElementById('call-username').innerText = incomingCallData.name;
-  document.getElementById('call-status-text').innerText = 'Connecting...';
-
-  if(incomingCallData.callType === 'video') {
-    document.getElementById('video-container').classList.remove('hidden');
-  }
-
-  try {
-    localStream = await navigator.mediaDevices.getUserMedia({ video: incomingCallData.callType === 'video', audio: true });
-    if(incomingCallData.callType === 'video') document.getElementById('local-video').srcObject = localStream;
-
-    createPeerConnection(incomingCallData.from);
-    localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
-
-    await peerConnection.setRemoteDescription(new RTCSessionDescription(incomingCallData.signal));
-    const answer = await peerConnection.createAnswer();
-    await peerConnection.setLocalDescription(answer);
-
-    socket.emit('answerCall', { signal: answer, to: incomingCallData.from, from: userId, callType: incomingCallData.callType });
-  } catch(e) {
-    closeCallScreen();
-  }
-}
-
-function rejectIncomingCall() {
-  document.getElementById('incoming-call-modal').classList.add('hidden');
-  socket.emit('endCall', { to: incomingCallData.from });
-  incomingCallData = null;
-}
-
-function createPeerConnection(remoteUserId) {
-  peerConnection = new RTCPeerConnection(rtcConfig);
-
-  peerConnection.onicecandidate = (event) => {
-    if (event.candidate) {
-      socket.emit('iceCandidate', { candidate: event.candidate, to: remoteUserId });
-    }
-  };
-
-  peerConnection.ontrack = (event) => {
-    document.getElementById('call-status-text').innerText = 'Connected';
-    remoteStream = event.streams[0];
-    document.getElementById('remote-video').srcObject = remoteStream;
-  };
-}
-
-function endCall() {
-  if (activeFriendId) socket.emit('endCall', { to: activeFriendId });
-  if (incomingCallData) socket.emit('endCall', { to: incomingCallData.from });
-  closeCallScreen();
-}
-
-function closeCallScreen() {
-  if (localStream) {
-    localStream.getTracks().forEach(track => track.stop());
-  }
-  if (peerConnection) {
-    peerConnection.close();
-    peerConnection = null;
-  }
-  document.getElementById('call-screen').classList.add('hidden');
-  document.getElementById('incoming-call-modal').classList.add('hidden');
-  document.getElementById('video-container').classList.add('hidden');
-  document.getElementById('local-video').srcObject = null;
-  document.getElementById('remote-video').srcObject = null;
-  incomingCallData = null;
-}
-
-function toggleMute() {
-  if(localStream) {
-    const audioTrack = localStream.getAudioTracks()[0];
-    audioTrack.enabled = !audioTrack.enabled;
-    document.getElementById('mute-btn').style.background = audioTrack.enabled ? '#ffffff33' : '#ea0038';
-  }
-}
-
-function toggleVideo() {
-  if(localStream) {
-    const videoTrack = localStream.getVideoTracks()[0];
-    if(videoTrack) {
-      videoTrack.enabled = !videoTrack.enabled;
-      document.getElementById('video-toggle-btn').style.background = videoTrack.enabled ? '#ffffff33' : '#ea0038';
     }
   }
 }
@@ -877,3 +889,4 @@ async function sendMessage() {
 }
 
 function logout() { localStorage.clear(); window.location.reload(); }
+  
