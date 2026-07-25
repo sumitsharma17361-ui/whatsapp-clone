@@ -1,9 +1,8 @@
-// Per-Chat Custom Wallpaper Feature (Fixed Version)
+// Strict Per-Chat Custom Wallpaper Feature
 window.addEventListener('DOMContentLoaded', () => {
   setTimeout(() => {
     const chatHeaderActions = document.querySelector('.chat-header-actions');
     if (chatHeaderActions) {
-      // Agar button pehle se nahi hai tabhi add karein
       if (!document.getElementById('wallpaper-custom-btn')) {
         const wallpaperBtn = document.createElement('button');
         wallpaperBtn.id = 'wallpaper-custom-btn';
@@ -17,52 +16,48 @@ window.addEventListener('DOMContentLoaded', () => {
   }, 1200);
 });
 
-// Jab bhi chat khulegi, wallpaper apply karne ke liye
+// Helper function to get current unique chat identifier (using Friend's username)
+function getCurrentChatKey() {
+  const friendNameElem = document.getElementById('active-friend-name');
+  if (friendNameElem && friendNameElem.innerText && friendNameElem.innerText !== 'Friend Name') {
+    return "wp_user_" + friendNameElem.innerText.trim();
+  }
+  return null;
+}
+
 function applyCurrentChatWallpaper() {
-  const friendId = window.activeFriendId;
+  const chatKey = getCurrentChatKey();
   const messagesDisplay = document.getElementById('messages-display');
   if (!messagesDisplay) return;
 
-  if (friendId) {
-    const savedWallpaper = localStorage.getItem(`wallpaper_${friendId}`);
+  if (chatKey) {
+    const savedWallpaper = localStorage.getItem(chatKey);
     if (savedWallpaper) {
       applyWallpaperStyle(savedWallpaper, messagesDisplay);
       return;
     }
   }
   
+  // Default fallback
   messagesDisplay.style.background = 'var(--chat-bg)';
   messagesDisplay.style.backgroundSize = 'auto';
 }
 
-// Chat khulne ke trigger ko hook kar rahe hain
+// Hook into openChat to update wallpaper whenever a chat is opened/switched
 const originalOpenChat = window.openChat;
 if (typeof originalOpenChat === 'function' && !window._wallpaperHooked) {
   window._wallpaperHooked = true;
   window.openChat = function(...args) {
     originalOpenChat.apply(this, args);
-    setTimeout(applyCurrentChatWallpaper, 150);
+    setTimeout(applyCurrentChatWallpaper, 200);
   };
 }
 
 function openWallpaperSelector() {
-  // Safe check: Agar window.activeFriendId na mile toh DOM se active friend name ya element se detect karne ki koshish karein
-  let friendId = window.activeFriendId;
-  
-  if (!friendId) {
-    // Fallback: Agar chat window visible hai toh hum default key ya temporary ID use kar sakte hain
-    const activeChatWindow = document.getElementById('active-chat');
-    if (activeChatWindow && !activeChatWindow.classList.contains('hidden')) {
-      const friendNameElem = document.getElementById('active-friend-name');
-      if (friendNameElem && friendNameElem.innerText) {
-        friendId = "chat_" + friendNameElem.innerText.trim();
-        window.activeFriendId = friendId; // Temporary assign taaki aage error na aaye
-      }
-    }
-  }
+  const chatKey = getCurrentChatKey();
 
-  if (!friendId) {
-    alert("Please open a chat first to change its wallpaper!");
+  if (!chatKey) {
+    alert("Please open a specific friend's chat first to change its wallpaper!");
     return;
   }
 
@@ -88,9 +83,9 @@ function openWallpaperSelector() {
 
   if (wallpapers[choice]) {
     const selected = wallpapers[choice];
-    localStorage.setItem(`wallpaper_${friendId}`, selected);
+    localStorage.setItem(chatKey, selected);
     applyCurrentChatWallpaper();
-    alert("Wallpaper updated for this chat!");
+    alert("Wallpaper updated successfully for this chat!");
   } else if (choice === '6') {
     const fileInput = document.createElement('input');
     fileInput.type = 'file';
@@ -101,9 +96,9 @@ function openWallpaperSelector() {
       const reader = new FileReader();
       reader.onload = (event) => {
         const base64Image = `url('${event.target.result}')`;
-        localStorage.setItem(`wallpaper_${friendId}`, base64Image);
+        localStorage.setItem(chatKey, base64Image);
         applyCurrentChatWallpaper();
-        alert("Custom photo wallpaper applied for this chat!");
+        alert("Custom photo wallpaper applied successfully for this chat!");
       };
       reader.readAsDataURL(file);
     };
