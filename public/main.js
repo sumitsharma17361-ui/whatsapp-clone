@@ -444,21 +444,40 @@ function viewStatus(st) {
 
   const isMyStatus = String(st.user._id || st.user) === String(userId);
 
+  const existingModal = document.querySelector('.status-story-modal');
+  if (existingModal) existingModal.remove();
+
   const modal = document.createElement('div');
   modal.className = 'status-story-modal';
+  modal.style.cssText = "position:fixed; top:0; left:0; width:100vw; height:100vh; background:#000; z-index:4000; display:flex; flex-direction:column; align-items:center; justify-content:center;";
+  
+  let mediaHtml = '';
+  if (st.mediaUrl) {
+    if (st.mediaType === 'video') {
+      mediaHtml = `<video src="${st.mediaUrl}" controls autoplay style="max-width:100%; max-height:75vh; object-fit:contain; background:#000;"></video>`;
+    } else {
+      mediaHtml = `<img src="${st.mediaUrl}" style="max-width:100%; max-height:75vh; object-fit:contain; background:#000;">`;
+    }
+  }
+
+  let textHtml = '';
+  if (st.text) {
+    textHtml = `<div style="margin-top:15px; color:#fff; font-size:18px; text-align:center; background:rgba(0,0,0,0.6); padding:12px 20px; border-radius:8px; max-width:80%;">${st.text}</div>`;
+  }
+
   modal.innerHTML = `
-    <div class="status-progress-bar"><div class="status-progress-fill"></div></div>
     <div style="position:absolute; top:30px; left:20px; display:flex; align-items:center; gap:10px; z-index:10;">
-      <img src="${st.user.profilePic || 'https://www.w3schools.com/howto/img_avatar.png'}" style="width:35px; height:35px; border-radius:50%;">
-      <span style="font-weight:bold; font-size:14px;">${st.user.username}</span>
+      <img src="${st.user.profilePic || 'https://www.w3schools.com/howto/img_avatar.png'}" style="width:40px; height:40px; border-radius:50%; object-fit:cover; border:2px solid #00a884;">
+      <span style="font-weight:bold; font-size:16px; color:white;">${st.user.username}</span>
     </div>
     
-    ${isMyStatus ? `<button onclick="deleteStatus('${st._id}')" style="position:absolute; top:28px; right:70px; background:#ea0038; color:white; border:none; padding:6px 12px; border-radius:6px; cursor:pointer; font-weight:bold; z-index:10; font-size:12px;">🗑️ Delete</button>` : ''}
+    ${isMyStatus ? `<button onclick="deleteStatus('${st._id}')" style="position:absolute; top:30px; right:70px; background:#ea0038; color:white; border:none; padding:8px 14px; border-radius:6px; cursor:pointer; font-weight:bold; z-index:10; font-size:13px;">🗑️ Delete</button>` : ''}
     
-    <span onclick="this.parentElement.remove()" style="position:absolute; top:25px; right:25px; font-size:28px; cursor:pointer; z-index:10;">&times;</span>
-    <div style="padding:0; text-align:center; background:${st.bgColor || '#000'}; width:100%; height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; position:relative;">
-      ${st.mediaUrl ? (st.mediaType === 'video' ? `<video src="${st.mediaUrl}" controls autoplay style="width:100%; height:100%; object-fit:contain; background:#000;"></video>` : `<img src="${st.mediaUrl}" style="width:100%; height:100%; object-fit:contain; background:#000;">`) : ''}
-      ${st.text ? `<div style="position:absolute; bottom:40px; left:20px; right:20px; background:rgba(0,0,0,0.6); padding:10px; border-radius:8px; font-size:18px;">${st.text}</div>` : ''}
+    <span onclick="this.parentElement.remove()" style="position:absolute; top:20px; right:25px; font-size:36px; cursor:pointer; z-index:10; color:white;">&times;</span>
+    
+    <div style="background:${st.bgColor || '#111b21'}; width:100%; height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; position:relative; padding:20px;">
+      ${mediaHtml}
+      ${textHtml}
     </div>
   `;
   document.body.appendChild(modal);
