@@ -35,10 +35,14 @@ mongoose.connect(process.env.MONGODB_URI)
   .then(() => console.log('MongoDB Connected (Calls & Chat Engine Ready)'))
   .catch(err => console.error('DB Connection Error:', err));
 
-// OneSignal Push Notification Helper Function with Enhanced Logging
-async function sendPushNotification(targetUserId, heading, message) {
+// Direct Database Push Notification Helper (Using OneSignal Player/Subscription ID directly from DB)
+async function sendPushNotification(subscriptionId, heading, message) {
   try {
-    console.log(`Attempting to send OneSignal push to external_id: ${targetUserId}`);
+    if (!subscriptionId) {
+      console.log("Skipping push notification: No subscription ID found for user.");
+      return;
+    }
+    console.log(`Sending direct OneSignal push to player_id: ${subscriptionId}`);
     const headers = {
       "Content-Type": "application/json; charset=utf-8",
       "Authorization": `Basic ${ONESIGNAL_REST_API_KEY}`
@@ -46,10 +50,7 @@ async function sendPushNotification(targetUserId, heading, message) {
 
     const body = {
       app_id: ONESIGNAL_APP_ID,
-      include_aliases: {
-        external_id: [targetUserId.toString()]
-      },
-      target_channel: "push",
+      include_player_ids: [subscriptionId],
       headings: { "en": heading },
       contents: { "en": message }
     };
@@ -61,7 +62,7 @@ async function sendPushNotification(targetUserId, heading, message) {
     });
     
     const result = await response.json();
-    console.log("Push Notification Sent Response:", JSON.stringify(result));
+    console.log("Direct Push Notification Sent Response:", JSON.stringify(result));
   } catch (err) {
     console.error("Push Notification Error:", err);
   }
@@ -262,11 +263,22 @@ const onlineUsers = new Map();
 io.on('connection', (socket) => {
   let currentUserId = null;
   
-  socket.on('identify', async (userId) => {
+  socket.on('identify', async (data) => {
+    // data can be just userId string, or an object containing userId and onesignal subscriptionId
+    const userId = typeof data === 'object' ? data.userId : data;
+    const subscriptionId = typeof data === 'object' ? data.subscriptionId : null;
+
+    if (!userId) return;
     currentUserId = userId; 
     onlineUsers.set(userId, socket.id); 
     socket.join(userId);
-    await User.findByIdAndUpdate(userId, { isOnline: true });
+
+    // Update online status and save push subscription token directly in MongoDB if available
+    const updateFields = { isOnline: true };
+    if (subscriptionId) {
+      updateFields.onesignalSubscriptionId = subscriptionId;
+    }
+    await User.findByIdAndUpdate(userId, updateFields);
     socket.broadcast.emit('statusChanged', { userId, isOnline: true });
   });
 
@@ -286,14 +298,23 @@ io.on('connection', (socket) => {
     io.to(data.receiverId).emit('receiveMessage', msgDataToSend);
     io.to(data.senderId).emit('receiveMessage', msgDataToSend);
 
-    // Agar receiver online nahi hai, toh Push Notification trigger karein
+    // Agar receiver online nahi hai, toh Database se uska subscription ID fetch karke direct push notification bhejein
     if (!receiverOnline) {
-      console.log(`Receiver ${data.receiverId} is offline/background. Triggering push notification.`);
-      sendPushNotification(
-        data.receiverId, 
-        "New Message", 
-        data.text ? (data.text.length > 50 ? data.text.substring(0, 50) + '...' : data.text) : "Sent an attachment"
-      );
+      console.log(`Receiver ${data.receiverId} is offline. Fetching token from DB for direct push.`);
+      try {
+        const receiverUser = await User.findById(data.receiverId);
+        if (receiverUser && receiverUser.onesignalSubscriptionId) {
+          await sendPushNotification(
+            receiverUser.onesignalSubscriptionId, 
+            "New Message", 
+            data.text ? (data.text.length > 50 ? data.text.substring(0, 50) + '...' : data.text) : "Sent an attachment"
+          );
+        } else {
+          console.log("No onesignalSubscriptionId found in database for receiver.");
+        }
+      } catch (dbErr) {
+        console.error("Error fetching receiver token from DB:", dbErr);
+      }
     } else {
       console.log(`Receiver ${data.receiverId} is online, skipping push notification.`);
     }
@@ -355,6 +376,6 @@ io.on('connection', (socket) => {
   });
 });
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || `3000`;
 server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
         
