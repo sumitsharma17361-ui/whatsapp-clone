@@ -7,7 +7,6 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const path = require('path');
 const fs = require('fs');
-const { GoogleGenerativeAI } = require("@google/generative-ai");
 
 const User = require('./models/User');
 const Message = require('./models/Message');
@@ -19,10 +18,6 @@ const server = http.createServer(app);
 const io = socketIo(server, { cors: { origin: "*" } });
 
 const JWT_SECRET = process.env.JWT_SECRET || 'supersecretkey';
-
-// Real Gemini API Key integration with fallback
-const geminiApiKey = process.env.GEMINI_API_KEY || "AQ.Ab8RN6LM5_oqTG5GVQa_oMD3OGtHpri-eZJ9H3CKhv5VXOteHQ";
-const genAI = new GoogleGenerativeAI(geminiApiKey);
 
 const UPLOADS_DIR = path.join(__dirname, 'public', 'uploads');
 if (!fs.existsSync(UPLOADS_DIR)){
@@ -111,24 +106,6 @@ app.post('/api/change-password', auth, async (req, res) => {
     res.json({ message: 'Password changed successfully!' });
   } catch (err) {
     res.status(500).json({ error: 'Server error' });
-  }
-});
-
-// REAL GEMINI API POWERED META AI ROUTE
-app.post('/api/meta-ai-chat', auth, async (req, res) => {
-  try {
-    const { prompt } = req.body;
-    if (!prompt) return res.status(400).json({ error: 'Prompt is required' });
-
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    const text = response.text();
-
-    res.json({ reply: `🤖 **Meta AI:**\n\n${text}` });
-  } catch (err) {
-    console.error("AI Error:", err);
-    res.status(500).json({ error: 'Failed to fetch response from AI engine.' });
   }
 });
 
@@ -327,4 +304,4 @@ io.on('connection', (socket) => {
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
-        
+      
