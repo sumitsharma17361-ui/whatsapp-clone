@@ -141,11 +141,17 @@ app.post('/api/accept-request', auth, async (req, res) => {
   res.json({ message: 'Accepted' });
 });
 
-// STATUS APIs
+// STATUS APIs (Updated with complete field handling)
 app.post('/api/status', auth, async (req, res) => {
   try {
     const { mediaUrl, mediaType, text, bgColor } = req.body;
-    const status = new Status({ user: req.user.userId, mediaUrl, mediaType, text, bgColor });
+    const status = new Status({ 
+      user: req.user.userId, 
+      mediaUrl: mediaUrl || '', 
+      mediaType: mediaType || 'text', 
+      text: text || '', 
+      bgColor: bgColor || '#111b21' 
+    });
     await status.save();
     io.emit('statusUpdated');
     res.status(201).json({ message: 'Status uploaded' });
@@ -298,3 +304,4 @@ io.on('connection', (socket) => {
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+        
