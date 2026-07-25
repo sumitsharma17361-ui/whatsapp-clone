@@ -1,6 +1,5 @@
-// Chat Wallpaper Customizer Feature (Alag se banayi gayi file)
+// Chat Wallpaper Customizer with Custom Photo Support (Alag se banayi gayi file)
 window.addEventListener('DOMContentLoaded', () => {
-  // Chat header me ek wallpaper button inject kar rahe hain bina main.js ko chhede
   setTimeout(() => {
     const chatHeaderActions = document.querySelector('.chat-header-actions');
     if (chatHeaderActions) {
@@ -12,7 +11,7 @@ window.addEventListener('DOMContentLoaded', () => {
       chatHeaderActions.prepend(wallpaperBtn);
     }
 
-    // Pehle se saved wallpaper apply karein
+    // Pehle se saved wallpaper (color ya photo) apply karein
     const savedWallpaper = localStorage.getItem('chatWallpaper');
     if (savedWallpaper) {
       applyWallpaperStyle(savedWallpaper);
@@ -21,26 +20,63 @@ window.addEventListener('DOMContentLoaded', () => {
 });
 
 function openWallpaperSelector() {
-  const wallpapers = [
-    { name: 'Classic WhatsApp', value: 'var(--chat-bg)' },
-    { name: 'Dark Charcoal', value: '#0b141a' },
-    { name: 'Soft Mint', value: '#e1f5fe' },
-    { name: 'Lavender Night', value: '#1a102f' },
-    { name: 'Sunset Gradient', value: 'linear-gradient(135deg, #2c3e50, #4ca1af)' }
-  ];
-
-  let choice = prompt("Choose a Chat Background:\n1. Classic\n2. Dark Charcoal\n3. Soft Mint\n4. Lavender Night\n5. Sunset Gradient\n\nEnter number (1-5):");
+  let choice = prompt(
+    "Choose Chat Background Option:\n" +
+    "1. Classic WhatsApp\n" +
+    "2. Dark Charcoal\n" +
+    "3. Soft Mint\n" +
+    "4. Lavender Night\n" +
+    "5. Sunset Gradient\n" +
+    "6. Upload Custom Photo (From Device)\n\nEnter option (1-6):"
+  );
   
-  if (choice && choice >= 1 && choice <= wallpapers.length) {
-    const selected = wallpapers[choice - 1].value;
+  if (!choice) return;
+
+  const wallpapers = {
+    '1': 'var(--chat-bg)',
+    '2': '#0b141a',
+    '3': '#e1f5fe',
+    '4': '#1a102f',
+    '5': 'linear-gradient(135deg, #2c3e50, #4ca1af)'
+  };
+
+  if (wallpapers[choice]) {
+    const selected = wallpapers[choice];
     localStorage.setItem('chatWallpaper', selected);
     applyWallpaperStyle(selected);
+  } else if (choice === '6') {
+    // Hidden file input create kar rahe hain custom photo select karne ke liye
+    const fileInput = document.createElement('input');
+    fileInput.type = 'file';
+    fileInput.accept = 'image/*';
+    fileInput.onchange = (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const base64Image = `url('${event.target.result}')`;
+        localStorage.setItem('chatWallpaper', base64Image);
+        applyWallpaperStyle(base64Image);
+        alert("Custom photo wallpaper applied successfully!");
+      };
+      reader.readAsDataURL(file);
+    };
+    fileInput.click();
+  } else {
+    alert("Invalid option selected.");
   }
 }
 
 function applyWallpaperStyle(bgValue) {
   const messagesDisplay = document.getElementById('messages-display');
   if (messagesDisplay) {
-    messagesDisplay.style.background = bgValue;
+    if (bgValue.startsWith('url(')) {
+      messagesDisplay.style.background = bgValue;
+      messagesDisplay.style.backgroundSize = 'cover';
+      messagesDisplay.style.backgroundPosition = 'center';
+    } else {
+      messagesDisplay.style.background = bgValue;
+      messagesDisplay.style.backgroundSize = 'auto';
+    }
   }
 }
