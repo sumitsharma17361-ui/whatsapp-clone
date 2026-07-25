@@ -7,6 +7,20 @@
   <link rel="stylesheet" href="style.css">
   <script src="/socket.io/socket.io.js"></script>
   <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+  <!-- OneSignal Web SDK Script -->
+  <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
+  <script>
+    window.OneSignalDeferred = window.OneSignalDeferred || [];
+    window.OneSignalDeferred.push(async function(OneSignal) {
+      await OneSignal.init({
+        appId: "45011a3c-d888-453d-a7f3-b7a8e436c09d",
+        safari_web_id: "web.onesignal.auto.00000000-0000-0000-0000-000000000000",
+        notifyButton: {
+          enable: true,
+        },
+      });
+    });
+  </script>
 </head>
 <body class="light-theme">
 
