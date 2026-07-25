@@ -19,6 +19,10 @@ const io = socketIo(server, { cors: { origin: "*" } });
 
 const JWT_SECRET = process.env.JWT_SECRET || 'supersecretkey';
 
+// OneSignal Credentials (Updated App ID)
+const ONESIGNAL_APP_ID = "45011a3c-d888-453d-a7f3-b7a8e436c09d";
+const ONESIGNAL_REST_API_KEY = process.env.ONESIGNAL_REST_API_KEY || "Yahan_Apni_REST_API_Key_Dalein";
+
 const UPLOADS_DIR = path.join(__dirname, 'public', 'uploads');
 if (!fs.existsSync(UPLOADS_DIR)){
     fs.mkdirSync(UPLOADS_DIR, { recursive: true });
@@ -30,6 +34,34 @@ app.use(express.static(path.join(__dirname, 'public')));
 mongoose.connect(process.env.MONGODB_URI)
   .then(() => console.log('MongoDB Connected (Calls & Chat Engine Ready)'))
   .catch(err => console.error('DB Connection Error:', err));
+
+// OneSignal Push Notification Helper Function
+async function sendPushNotification(targetUserId, heading, message) {
+  try {
+    const headers = {
+      "Content-Type": "application/json; charset=utf-8",
+      "Authorization": `Basic ${ONESIGNAL_REST_API_KEY}`
+    };
+
+    const body = {
+      app_id: ONESIGNAL_APP_ID,
+      include_external_user_ids: [targetUserId.toString()],
+      headings: { "en": heading },
+      contents: { "en": message }
+    };
+
+    const response = await fetch("https://onesignal.com/api/v1/notifications", {
+      method: "POST",
+      headers: headers,
+      body: JSON.stringify(body)
+    });
+    
+    const result = await response.json();
+    console.log("Push Notification Sent:", result);
+  } catch (err) {
+    console.error("Push Notification Error:", err);
+  }
+}
 
 app.post('/api/upload', async (req, res) => {
   try {
@@ -225,8 +257,11 @@ app.delete('/api/messages/clear/:friendId', auth, async (req, res) => {
 const onlineUsers = new Map();
 io.on('connection', (socket) => {
   let currentUserId = null;
+  
   socket.on('identify', async (userId) => {
-    currentUserId = userId; onlineUsers.set(userId, socket.id); socket.join(userId);
+    currentUserId = userId; 
+    onlineUsers.set(userId, socket.id); 
+    socket.join(userId);
     await User.findByIdAndUpdate(userId, { isOnline: true });
     socket.broadcast.emit('statusChanged', { userId, isOnline: true });
   });
@@ -244,6 +279,15 @@ io.on('connection', (socket) => {
 
     io.to(data.receiverId).emit('receiveMessage', msgDataToSend);
     io.to(data.senderId).emit('receiveMessage', msgDataToSend);
+
+    // Agar receiver online nahi hai ya background me hai, toh Push Notification bhej do
+    if (!receiverOnline) {
+      sendPushNotification(
+        data.receiverId, 
+        "New Message", 
+        data.text ? (data.text.length > 50 ? data.text.substring(0, 50) + '...' : data.text) : "Sent an attachment"
+      );
+    }
   });
 
   // WebRTC Signaling & Call Log Events
@@ -304,4 +348,4 @@ io.on('connection', (socket) => {
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
-      
+        
