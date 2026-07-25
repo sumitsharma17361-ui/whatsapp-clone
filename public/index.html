@@ -6,7 +6,6 @@
   <title>WhatsApp Ultra Pro</title>
   <link rel="stylesheet" href="style.css">
   <script src="/socket.io/socket.io.js"></script>
-  <!-- PeerJS CDN for Fully Functional Calling -->
   <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
 </head>
 <body class="light-theme">
@@ -17,22 +16,24 @@
   </div>
 
   <!-- CALL SCREEN / MODAL -->
-  <div id="call-screen" class="modal-overlay hidden" style="background: #111b21; z-index: 3000; flex-direction: column; justify-content: space-between; padding: 30px;">
-    <div style="display: flex; flex-direction: column; align-items: center; margin-top: 40px;">
-      <img id="call-avatar" src="https://www.w3schools.com/howto/img_avatar.png" style="width: 100px; height: 100px; border-radius: 50%; object-fit: cover; border: 3px solid #00a884; margin-bottom: 15px;">
-      <h2 id="call-username" style="color: white; font-size: 22px;">Calling...</h2>
-      <p id="call-status-text" style="color: #8696a0; font-size: 14px; margin-top: 5px;">Ringing...</p>
+  <div id="call-screen" class="modal-overlay hidden" style="background: #111b21; z-index: 3000; flex-direction: column; justify-content: space-between; padding: 20px; user-select: none;">
+    <div style="display: flex; flex-direction: column; align-items: center; margin-top: 20px; z-index: 10;">
+      <img id="call-avatar" src="https://www.w3schools.com/howto/img_avatar.png" style="width: 80px; height: 80px; border-radius: 50%; object-fit: cover; border: 3px solid #00a884; margin-bottom: 10px;">
+      <h2 id="call-username" style="color: white; font-size: 20px;">Calling...</h2>
+      <p id="call-status-text" style="color: #8696a0; font-size: 13px; margin-top: 3px;">Ringing...</p>
+      <div id="call-timer" class="hidden" style="color: #25d366; font-size: 14px; font-weight: bold; margin-top: 5px;">00:00</div>
     </div>
 
-    <!-- Video Streams Container -->
-    <div id="video-container" style="display: flex; gap: 10px; width: 100%; height: 50vh; justify-content: center; position: relative;" class="hidden">
-      <video id="remote-video" autoplay playsinline style="width: 100%; height: 100%; object-fit: cover; border-radius: 12px; background: #000;"></video>
-      <video id="local-video" autoplay playsinline muted style="width: 120px; height: 160px; object-fit: cover; border-radius: 8px; position: absolute; bottom: 15px; right: 15px; border: 2px solid white; background: #000;"></video>
+    <!-- Video Streams Container with Draggable Local Video -->
+    <div id="video-container" style="display: flex; width: 100%; height: 60vh; justify-content: center; position: relative; overflow: hidden; border-radius: 12px;" class="hidden">
+      <video id="remote-video" autoplay playsinline style="width: 100%; height: 100%; object-fit: cover; background: #000; border-radius: 12px;"></video>
+      <video id="local-video" autoplay playsinline muted style="width: 110px; height: 150px; object-fit: cover; border-radius: 8px; position: absolute; bottom: 20px; right: 20px; border: 2px solid white; background: #000; cursor: grab; z-index: 20; touch-action: none;"></video>
     </div>
 
     <!-- Call Controls -->
-    <div style="display: flex; gap: 30px; justify-content: center; align-items: center; margin-bottom: 30px;">
+    <div style="display: flex; gap: 20px; justify-content: center; align-items: center; margin-bottom: 20px; z-index: 10;">
       <button onclick="toggleMute()" id="mute-btn" class="call-control-btn" title="Mute Mic">🎤</button>
+      <button onclick="switchCamera()" id="cam-switch-btn" class="call-control-btn hidden" title="Switch Camera">🔄</button>
       <button onclick="endCall()" class="call-control-btn" style="background: #ea0038; color: white;" title="End Call">📞</button>
       <button onclick="toggleVideo()" id="video-toggle-btn" class="call-control-btn" title="Toggle Camera">📹</button>
     </div>
