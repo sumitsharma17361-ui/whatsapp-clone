@@ -19,7 +19,7 @@ const io = socketIo(server, { cors: { origin: "*" } });
 
 const JWT_SECRET = process.env.JWT_SECRET || 'supersecretkey';
 
-// OneSignal Credentials (Updated with your App ID and REST API Key)
+// OneSignal Credentials
 const ONESIGNAL_APP_ID = "45011a3c-d888-453d-a7f3-b7a8e436c09d";
 const ONESIGNAL_REST_API_KEY = "Os_v2_app_iuarupgyrbct3j7tw6uoinwatwi6dfkac74udm4fmcr2hewe6qzyxy2ueiaufcte77kptuzp4oghr75rfsth2hjprbwbtdrzwlpmpta";
 
@@ -35,7 +35,7 @@ mongoose.connect(process.env.MONGODB_URI)
   .then(() => console.log('MongoDB Connected (Calls & Chat Engine Ready)'))
   .catch(err => console.error('DB Connection Error:', err));
 
-// OneSignal Push Notification Helper Function
+// OneSignal Push Notification Helper Function (Updated with proper alias targeting)
 async function sendPushNotification(targetUserId, heading, message) {
   try {
     const headers = {
@@ -45,7 +45,10 @@ async function sendPushNotification(targetUserId, heading, message) {
 
     const body = {
       app_id: ONESIGNAL_APP_ID,
-      include_external_user_ids: [targetUserId.toString()],
+      include_aliases: {
+        external_id: [targetUserId.toString()]
+      },
+      target_channel: "push",
       headings: { "en": heading },
       contents: { "en": message }
     };
@@ -57,7 +60,7 @@ async function sendPushNotification(targetUserId, heading, message) {
     });
     
     const result = await response.json();
-    console.log("Push Notification Sent:", result);
+    console.log("Push Notification Sent Response:", result);
   } catch (err) {
     console.error("Push Notification Error:", err);
   }
@@ -280,7 +283,7 @@ io.on('connection', (socket) => {
     io.to(data.receiverId).emit('receiveMessage', msgDataToSend);
     io.to(data.senderId).emit('receiveMessage', msgDataToSend);
 
-    // Agar receiver online nahi hai ya background me hai, toh Push Notification bhej do
+    // Agar receiver online nahi hai, toh Push Notification trigger karein
     if (!receiverOnline) {
       sendPushNotification(
         data.receiverId, 
@@ -348,4 +351,4 @@ io.on('connection', (socket) => {
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
-             
+    
