@@ -1,21 +1,25 @@
-// Per-Chat Custom Wallpaper Feature (Alag se banayi gayi file)
+// Per-Chat Custom Wallpaper Feature (Fixed Version)
 window.addEventListener('DOMContentLoaded', () => {
   setTimeout(() => {
     const chatHeaderActions = document.querySelector('.chat-header-actions');
     if (chatHeaderActions) {
-      const wallpaperBtn = document.createElement('button');
-      wallpaperBtn.className = 'icon-btn';
-      wallpaperBtn.title = 'Change Chat Wallpaper for this Friend';
-      wallpaperBtn.innerHTML = '🎨';
-      wallpaperBtn.onclick = openWallpaperSelector;
-      chatHeaderActions.prepend(wallpaperBtn);
+      // Agar button pehle se nahi hai tabhi add karein
+      if (!document.getElementById('wallpaper-custom-btn')) {
+        const wallpaperBtn = document.createElement('button');
+        wallpaperBtn.id = 'wallpaper-custom-btn';
+        wallpaperBtn.className = 'icon-btn';
+        wallpaperBtn.title = 'Change Chat Wallpaper for this Friend';
+        wallpaperBtn.innerHTML = '🎨';
+        wallpaperBtn.onclick = openWallpaperSelector;
+        chatHeaderActions.prepend(wallpaperBtn);
+      }
     }
-  }, 1000);
+  }, 1200);
 });
 
-// Jab bhi chat khulegi ya switch hogi, yeh function background apply kar dega
+// Jab bhi chat khulegi, wallpaper apply karne ke liye
 function applyCurrentChatWallpaper() {
-  const friendId = window.activeFriendId; // main.js se active friend ki ID le rahe hain
+  const friendId = window.activeFriendId;
   const messagesDisplay = document.getElementById('messages-display');
   if (!messagesDisplay) return;
 
@@ -27,22 +31,36 @@ function applyCurrentChatWallpaper() {
     }
   }
   
-  // Default wallpaper agar is friend ke liye kuch set nahi hai
   messagesDisplay.style.background = 'var(--chat-bg)';
   messagesDisplay.style.backgroundSize = 'auto';
 }
 
-// Har baar chat open hone par wallpaper check karne ke liye ek chhota sa hook laga rahe hain
+// Chat khulne ke trigger ko hook kar rahe hain
 const originalOpenChat = window.openChat;
-if (typeof originalOpenChat === 'function') {
+if (typeof originalOpenChat === 'function' && !window._wallpaperHooked) {
+  window._wallpaperHooked = true;
   window.openChat = function(...args) {
     originalOpenChat.apply(this, args);
-    setTimeout(applyCurrentChatWallpaper, 100); // Chat khulne ke turant baad wallpaper load ho jayega
+    setTimeout(applyCurrentChatWallpaper, 150);
   };
 }
 
 function openWallpaperSelector() {
-  const friendId = window.activeFriendId;
+  // Safe check: Agar window.activeFriendId na mile toh DOM se active friend name ya element se detect karne ki koshish karein
+  let friendId = window.activeFriendId;
+  
+  if (!friendId) {
+    // Fallback: Agar chat window visible hai toh hum default key ya temporary ID use kar sakte hain
+    const activeChatWindow = document.getElementById('active-chat');
+    if (activeChatWindow && !activeChatWindow.classList.contains('hidden')) {
+      const friendNameElem = document.getElementById('active-friend-name');
+      if (friendNameElem && friendNameElem.innerText) {
+        friendId = "chat_" + friendNameElem.innerText.trim();
+        window.activeFriendId = friendId; // Temporary assign taaki aage error na aaye
+      }
+    }
+  }
+
   if (!friendId) {
     alert("Please open a chat first to change its wallpaper!");
     return;
