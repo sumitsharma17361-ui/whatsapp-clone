@@ -49,18 +49,31 @@ window.onload = () => {
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible" && socket && userId) {
       socket.connect();
-      if (window.OneSignalDeferred) {
-        window.OneSignalDeferred.push(async function(OneSignal) {
-          try {
-            let subId = OneSignal.User.PushSubscription.id;
-            socket.emit('identify', { userId: userId, subscriptionId: subId });
-          } catch(e) {
-            socket.emit('identify', { userId: userId, subscriptionId: null });
-          }
-        });
-      } else {
-        socket.emit('identify', { userId: userId, subscriptionId: null });
+      function sendTokenWithRetry(retries = 5) {
+        if (window.OneSignalDeferred) {
+          window.OneSignalDeferred.push(async function(OneSignal) {
+            try {
+              let subId = OneSignal.User.PushSubscription.id;
+              if (subId) {
+                socket.emit('identify', { userId: userId, subscriptionId: subId });
+              } else if (retries > 0) {
+                setTimeout(() => sendTokenWithRetry(retries - 1), 2000);
+              } else {
+                socket.emit('identify', { userId: userId, subscriptionId: null });
+              }
+            } catch(e) {
+              if (retries > 0) {
+                setTimeout(() => sendTokenWithRetry(retries - 1), 2000);
+              } else {
+                socket.emit('identify', { userId: userId, subscriptionId: null });
+              }
+            }
+          });
+        } else {
+          socket.emit('identify', { userId: userId, subscriptionId: null });
+        }
       }
+      sendTokenWithRetry();
       loadDashboardData();
     }
   });
@@ -226,15 +239,32 @@ function showDashboard() {
   });
 
   socket.on('connect', async () => {
-    let subId = null;
-    if (window.OneSignalDeferred) {
-      window.OneSignalDeferred.push(async function(OneSignal) {
-        try {
-          subId = OneSignal.User.PushSubscription.id;
-        } catch(e) {}
-      });
+    function sendTokenWithRetry(retries = 5) {
+      if (window.OneSignalDeferred) {
+        window.OneSignalDeferred.push(async function(OneSignal) {
+          try {
+            let subId = OneSignal.User.PushSubscription.id;
+            if (subId) {
+              socket.emit('identify', { userId: userId, subscriptionId: subId });
+              console.log("OneSignal subscription ID sent to server:", subId);
+            } else if (retries > 0) {
+              setTimeout(() => sendTokenWithRetry(retries - 1), 2000);
+            } else {
+              socket.emit('identify', { userId: userId, subscriptionId: null });
+            }
+          } catch(e) {
+            if (retries > 0) {
+              setTimeout(() => sendTokenWithRetry(retries - 1), 2000);
+            } else {
+              socket.emit('identify', { userId: userId, subscriptionId: null });
+            }
+          }
+        });
+      } else {
+        socket.emit('identify', { userId: userId, subscriptionId: null });
+      }
     }
-    socket.emit('identify', { userId: userId, subscriptionId: subId });
+    sendTokenWithRetry();
   });
 
   initPeerJS();
@@ -1051,5 +1081,5 @@ async function sendMessage() {
 
 function logout() { 
   localStorage.clear(); 
-  window.location.reload(); 
+  window.location.reload();
 }
