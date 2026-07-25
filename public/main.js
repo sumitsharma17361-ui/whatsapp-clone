@@ -44,6 +44,15 @@ window.onload = () => {
     document.body.classList.remove('light-theme');
     document.body.classList.add('dark-theme');
   }
+
+  // Handle app visibility change to re-identify socket when app comes back to foreground
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible" && socket && userId) {
+      socket.connect();
+      socket.emit('identify', userId);
+      loadDashboardData();
+    }
+  });
 };
 
 function toggleTheme() {
@@ -185,8 +194,17 @@ function showDashboard() {
   document.getElementById('app-screen').classList.remove('hidden');
   document.getElementById('current-user-display').innerText = username;
   
-  socket = io();
-  socket.emit('identify', userId);
+  // Robust Socket Initialization with Auto-Reconnect Config
+  socket = io({
+    reconnection: true,
+    reconnectionAttempts: Infinity,
+    reconnectionDelay: 1000,
+    timeout: 20000
+  });
+
+  socket.on('connect', () => {
+    socket.emit('identify', userId);
+  });
 
   initPeerJS();
 
@@ -768,7 +786,6 @@ function setReply(msgText) {
   document.getElementById('reply-preview-bar').classList.remove('hidden');
   document.getElementById('message-input').focus();
 }
-
 function cancelReply() {
   replyMessageData = null;
   document.getElementById('reply-preview-bar').classList.add('hidden');
@@ -933,7 +950,10 @@ async function sendMessage() {
   cancelReply();
 
   if (selectedFile) {
-    const filePayload = selectedFile; selectedFile = null; document.getElementById('file-input').value = ""; input.value = '';
+    const filePayload = selectedFile; 
+    selectedFile = null; 
+    document.getElementById('file-input').value = ""; 
+    input.value = '';
     if (textToSend.includes('(Ready)')) textToSend = "";
     const timestamp = Date.now();
     const display = document.getElementById('messages-display');
