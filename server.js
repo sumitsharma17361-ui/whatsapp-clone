@@ -35,9 +35,10 @@ mongoose.connect(process.env.MONGODB_URI)
   .then(() => console.log('MongoDB Connected (Calls & Chat Engine Ready)'))
   .catch(err => console.error('DB Connection Error:', err));
 
-// OneSignal Push Notification Helper Function (Updated with proper alias targeting)
+// OneSignal Push Notification Helper Function with Enhanced Logging
 async function sendPushNotification(targetUserId, heading, message) {
   try {
+    console.log(`Attempting to send OneSignal push to external_id: ${targetUserId}`);
     const headers = {
       "Content-Type": "application/json; charset=utf-8",
       "Authorization": `Basic ${ONESIGNAL_REST_API_KEY}`
@@ -60,7 +61,7 @@ async function sendPushNotification(targetUserId, heading, message) {
     });
     
     const result = await response.json();
-    console.log("Push Notification Sent Response:", result);
+    console.log("Push Notification Sent Response:", JSON.stringify(result));
   } catch (err) {
     console.error("Push Notification Error:", err);
   }
@@ -271,6 +272,8 @@ io.on('connection', (socket) => {
 
   socket.on('sendMessage', async (data) => {
     const receiverOnline = onlineUsers.has(data.receiverId);
+    console.log(`Message from ${data.senderId} to ${data.receiverId}. Receiver Online Status: ${receiverOnline}`);
+
     const msg = new Message({ 
       sender: data.senderId, receiver: data.receiverId, 
       text: data.text, fileUrl: data.fileUrl, fileName: data.fileName, fileType: data.fileType,
@@ -285,11 +288,14 @@ io.on('connection', (socket) => {
 
     // Agar receiver online nahi hai, toh Push Notification trigger karein
     if (!receiverOnline) {
+      console.log(`Receiver ${data.receiverId} is offline/background. Triggering push notification.`);
       sendPushNotification(
         data.receiverId, 
         "New Message", 
         data.text ? (data.text.length > 50 ? data.text.substring(0, 50) + '...' : data.text) : "Sent an attachment"
       );
+    } else {
+      console.log(`Receiver ${data.receiverId} is online, skipping push notification.`);
     }
   });
 
@@ -351,4 +357,4 @@ io.on('connection', (socket) => {
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
-    
+        
