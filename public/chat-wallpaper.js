@@ -1,4 +1,4 @@
-// Strict Per-Chat Custom Wallpaper Feature
+// Strict Per-Chat Custom Wallpaper Feature (Instant Load)
 window.addEventListener('DOMContentLoaded', () => {
   setTimeout(() => {
     const chatHeaderActions = document.querySelector('.chat-header-actions');
@@ -13,10 +13,9 @@ window.addEventListener('DOMContentLoaded', () => {
         chatHeaderActions.prepend(wallpaperBtn);
       }
     }
-  }, 1200);
+  }, 1000);
 });
 
-// Helper function to get current unique chat identifier (using Friend's username)
 function getCurrentChatKey() {
   const friendNameElem = document.getElementById('active-friend-name');
   if (friendNameElem && friendNameElem.innerText && friendNameElem.innerText !== 'Friend Name') {
@@ -38,18 +37,18 @@ function applyCurrentChatWallpaper() {
     }
   }
   
-  // Default fallback
   messagesDisplay.style.background = 'var(--chat-bg)';
   messagesDisplay.style.backgroundSize = 'auto';
 }
 
-// Hook into openChat to update wallpaper whenever a chat is opened/switched
+// Hook into openChat with immediate execution
 const originalOpenChat = window.openChat;
 if (typeof originalOpenChat === 'function' && !window._wallpaperHooked) {
   window._wallpaperHooked = true;
   window.openChat = function(...args) {
     originalOpenChat.apply(this, args);
-    setTimeout(applyCurrentChatWallpaper, 200);
+    // Turant bina delay ke wallpaper apply karein taaki flicker na ho
+    requestAnimationFrame(applyCurrentChatWallpaper);
   };
 }
 
@@ -117,4 +116,4 @@ function applyWallpaperStyle(bgValue, element) {
     element.style.background = bgValue;
     element.style.backgroundSize = 'auto';
   }
-}
+      }
