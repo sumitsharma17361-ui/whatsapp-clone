@@ -1,28 +1,56 @@
-// Chat Wallpaper Customizer with Custom Photo Support (Alag se banayi gayi file)
+// Per-Chat Custom Wallpaper Feature (Alag se banayi gayi file)
 window.addEventListener('DOMContentLoaded', () => {
   setTimeout(() => {
     const chatHeaderActions = document.querySelector('.chat-header-actions');
     if (chatHeaderActions) {
       const wallpaperBtn = document.createElement('button');
       wallpaperBtn.className = 'icon-btn';
-      wallpaperBtn.title = 'Change Chat Wallpaper';
+      wallpaperBtn.title = 'Change Chat Wallpaper for this Friend';
       wallpaperBtn.innerHTML = '🎨';
       wallpaperBtn.onclick = openWallpaperSelector;
       chatHeaderActions.prepend(wallpaperBtn);
     }
-
-    // Pehle se saved wallpaper (color ya photo) apply karein
-    const savedWallpaper = localStorage.getItem('chatWallpaper');
-    if (savedWallpaper) {
-      applyWallpaperStyle(savedWallpaper);
-    }
   }, 1000);
 });
 
+// Jab bhi chat khulegi ya switch hogi, yeh function background apply kar dega
+function applyCurrentChatWallpaper() {
+  const friendId = window.activeFriendId; // main.js se active friend ki ID le rahe hain
+  const messagesDisplay = document.getElementById('messages-display');
+  if (!messagesDisplay) return;
+
+  if (friendId) {
+    const savedWallpaper = localStorage.getItem(`wallpaper_${friendId}`);
+    if (savedWallpaper) {
+      applyWallpaperStyle(savedWallpaper, messagesDisplay);
+      return;
+    }
+  }
+  
+  // Default wallpaper agar is friend ke liye kuch set nahi hai
+  messagesDisplay.style.background = 'var(--chat-bg)';
+  messagesDisplay.style.backgroundSize = 'auto';
+}
+
+// Har baar chat open hone par wallpaper check karne ke liye ek chhota sa hook laga rahe hain
+const originalOpenChat = window.openChat;
+if (typeof originalOpenChat === 'function') {
+  window.openChat = function(...args) {
+    originalOpenChat.apply(this, args);
+    setTimeout(applyCurrentChatWallpaper, 100); // Chat khulne ke turant baad wallpaper load ho jayega
+  };
+}
+
 function openWallpaperSelector() {
+  const friendId = window.activeFriendId;
+  if (!friendId) {
+    alert("Please open a chat first to change its wallpaper!");
+    return;
+  }
+
   let choice = prompt(
-    "Choose Chat Background Option:\n" +
-    "1. Classic WhatsApp\n" +
+    "Choose Chat Background for this Contact:\n\n" +
+    "1. Default WhatsApp Theme\n" +
     "2. Dark Charcoal\n" +
     "3. Soft Mint\n" +
     "4. Lavender Night\n" +
@@ -42,10 +70,10 @@ function openWallpaperSelector() {
 
   if (wallpapers[choice]) {
     const selected = wallpapers[choice];
-    localStorage.setItem('chatWallpaper', selected);
-    applyWallpaperStyle(selected);
+    localStorage.setItem(`wallpaper_${friendId}`, selected);
+    applyCurrentChatWallpaper();
+    alert("Wallpaper updated for this chat!");
   } else if (choice === '6') {
-    // Hidden file input create kar rahe hain custom photo select karne ke liye
     const fileInput = document.createElement('input');
     fileInput.type = 'file';
     fileInput.accept = 'image/*';
@@ -55,9 +83,9 @@ function openWallpaperSelector() {
       const reader = new FileReader();
       reader.onload = (event) => {
         const base64Image = `url('${event.target.result}')`;
-        localStorage.setItem('chatWallpaper', base64Image);
-        applyWallpaperStyle(base64Image);
-        alert("Custom photo wallpaper applied successfully!");
+        localStorage.setItem(`wallpaper_${friendId}`, base64Image);
+        applyCurrentChatWallpaper();
+        alert("Custom photo wallpaper applied for this chat!");
       };
       reader.readAsDataURL(file);
     };
@@ -67,16 +95,13 @@ function openWallpaperSelector() {
   }
 }
 
-function applyWallpaperStyle(bgValue) {
-  const messagesDisplay = document.getElementById('messages-display');
-  if (messagesDisplay) {
-    if (bgValue.startsWith('url(')) {
-      messagesDisplay.style.background = bgValue;
-      messagesDisplay.style.backgroundSize = 'cover';
-      messagesDisplay.style.backgroundPosition = 'center';
-    } else {
-      messagesDisplay.style.background = bgValue;
-      messagesDisplay.style.backgroundSize = 'auto';
-    }
+function applyWallpaperStyle(bgValue, element) {
+  if (bgValue.startsWith('url(')) {
+    element.style.background = bgValue;
+    element.style.backgroundSize = 'cover';
+    element.style.backgroundPosition = 'center';
+  } else {
+    element.style.background = bgValue;
+    element.style.backgroundSize = 'auto';
   }
 }
