@@ -13,6 +13,27 @@ const Message = require('./models/Message');
 const Status = require('./models/Status');
 const CallLog = require('./models/CallLog');
 
+// Group Schema for Group Chats
+const GroupSchema = new mongoose.Schema({
+  name: { type: String, required: true },
+  admin: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  members: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+  createdAt: { type: Date, default: Date.now }
+});
+const Group = mongoose.model('Group', GroupSchema);
+
+// Group Message Schema
+const GroupMessageSchema = new mongoose.Schema({
+  group: { type: mongoose.Schema.Types.ObjectId, ref: 'Group', required: true },
+  sender: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  text: { type: String },
+  fileUrl: { type: String },
+  fileName: { type: String },
+  fileType: { type: String },
+  timestamp: { type: Number, default: Date.now }
+});
+const GroupMessage = mongoose.model('GroupMessage', GroupMessageSchema);
+
 const app = express();
 const server = http.createServer(app);
 const io = socketIo(server, { cors: { origin: "*" } });
@@ -32,10 +53,10 @@ app.use(express.json({ limit: '100mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 mongoose.connect(process.env.MONGODB_URI)
-  .then(() => console.log('MongoDB Connected (Calls & Chat Engine Ready)'))
+  .then(() => console.log('MongoDB Connected (Groups & Status Viewers Ready)'))
   .catch(err => console.error('DB Connection Error:', err));
 
-// Direct Database Push Notification Helper (Using OneSignal Player/Subscription ID directly from DB)
+// Direct Database Push Notification Helper
 async function sendPushNotification(subscriptionId, heading, message) {
   try {
     if (!subscriptionId) {
@@ -119,7 +140,7 @@ const auth = (req, res, next) => {
     req.user = decoded;
     next();
   });
-};
+});
 
 // CHANGE PASSWORD API ROUTE
 app.post('/api/change-password', auth, async (req, res) => {
@@ -163,7 +184,9 @@ app.get('/api/dashboard', auth, async (req, res) => {
   const user = await User.findById(req.user.userId)
     .populate('friends', 'username isOnline profilePic lastSeen')
     .populate('friendRequests', 'username');
-  res.json({ friends: user.friends, friendRequests: user.friendRequests });
+  
+  const groups = await Group.find({ members: req.user.userId }).populate('members', 'username profilePic');
+  res.json({ friends: user.friends, friendRequests: user.friendRequests, groups });
 });
 
 app.post('/api/accept-request', auth, async (req, res) => {
@@ -178,7 +201,29 @@ app.post('/api/accept-request', auth, async (req, res) => {
   res.json({ message: 'Accepted' });
 });
 
-// STATUS APIs
+// GROUP APIs
+app.post('/api/groups/create', auth, async (req, res) => {
+  try {
+    const { name, memberIds } = req.body;
+    if(!name) return res.status(400).json({ error: 'Group name required' });
+    const members = [req.user.userId, ...(memberIds || [])];
+    const group = new Group({ name, admin: req.user.userId, members });
+    await group.save();
+    members.forEach(mId => io.to(mId.toString()).emit('groupCreated'));
+    res.status(201).json({ message: 'Group created successfully' });
+  } catch(e) { res.status(500).json({ error: 'Failed to create group' }); }
+});
+
+app.get('/api/groups/messages/:groupId', auth, async (req, res) => {
+  try {
+    const messages = await GroupMessage.find({ group: req.params.groupId })
+      .populate('sender', 'username profilePic')
+      .sort('timestamp');
+    res.json(messages);
+  } catch(e) { res.status(500).json({ error: 'Failed' }); }
+});
+
+// STATUS APIs with Viewers List
 app.post('/api/status', auth, async (req, res) => {
   try {
     const { mediaUrl, mediaType, text, bgColor } = req.body;
@@ -187,7 +232,8 @@ app.post('/api/status', auth, async (req, res) => {
       mediaUrl: mediaUrl || '', 
       mediaType: mediaType || 'text', 
       text: text || '', 
-      bgColor: bgColor || '#111b21' 
+      bgColor: bgColor || '#111b21',
+      viewers: []
     });
     await status.save();
     io.emit('statusUpdated');
@@ -201,6 +247,7 @@ app.get('/api/status', auth, async (req, res) => {
     const visibleUserIds = [...user.friends, req.user.userId];
     const statuses = await Status.find({ user: { $in: visibleUserIds } })
       .populate('user', 'username profilePic')
+      .populate('viewers', 'username profilePic')
       .sort('-createdAt');
     res.json(statuses);
   } catch (err) { res.status(500).json({ error: 'Failed' }); }
@@ -208,7 +255,11 @@ app.get('/api/status', auth, async (req, res) => {
 
 app.post('/api/status/view/:statusId', auth, async (req, res) => {
   try {
-    await Status.findByIdAndUpdate(req.params.statusId, { $addToSet: { viewers: req.user.userId } });
+    const status = await Status.findById(req.params.statusId);
+    if(status && !status.viewers.includes(req.user.userId)) {
+      status.viewers.push(req.user.userId);
+      await status.save();
+    }
     res.json({ message: 'Viewed' });
   } catch (err) { res.status(500).json({ error: 'Failed' }); }
 });
@@ -222,9 +273,7 @@ app.delete('/api/status/:statusId', auth, async (req, res) => {
     await Status.findByIdAndDelete(req.params.statusId);
     io.emit('statusUpdated');
     res.json({ message: 'Status deleted successfully' });
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to delete status' });
-  }
+  } catch (err) { res.status(500).json({ error: 'Failed to delete status' }); }
 });
 
 // CALL LOGS APIs
@@ -264,7 +313,6 @@ io.on('connection', (socket) => {
   let currentUserId = null;
   
   socket.on('identify', async (data) => {
-    // data can be just userId string, or an object containing userId and onesignal subscriptionId
     const userId = typeof data === 'object' ? data.userId : data;
     const subscriptionId = typeof data === 'object' ? data.subscriptionId : null;
 
@@ -273,13 +321,24 @@ io.on('connection', (socket) => {
     onlineUsers.set(userId, socket.id); 
     socket.join(userId);
 
-    // Update online status and save push subscription token directly in MongoDB if available
     const updateFields = { isOnline: true };
     if (subscriptionId) {
       updateFields.onesignalSubscriptionId = subscriptionId;
     }
     await User.findByIdAndUpdate(userId, updateFields);
     socket.broadcast.emit('statusChanged', { userId, isOnline: true });
+  });
+
+  socket.on('joinGroup', (groupId) => {
+    socket.join(groupId);
+  });
+
+  socket.on('sendGroupMessage', async (data) => {
+    const { groupId, senderId, text, fileUrl, fileName, fileType, isEncrypted } = data;
+    const msg = new GroupMessage({ group: groupId, sender: senderId, text, fileUrl, fileName, fileType });
+    await msg.save();
+    const populatedMsg = await GroupMessage.findById(msg._id).populate('sender', 'username profilePic');
+    io.to(groupId).emit('receiveGroupMessage', populatedMsg);
   });
 
   socket.on('sendMessage', async (data) => {
@@ -298,7 +357,6 @@ io.on('connection', (socket) => {
     io.to(data.receiverId).emit('receiveMessage', msgDataToSend);
     io.to(data.senderId).emit('receiveMessage', msgDataToSend);
 
-    // Agar receiver online nahi hai, toh Database se uska subscription ID fetch karke direct push notification bhejein
     if (!receiverOnline) {
       console.log(`Receiver ${data.receiverId} is offline. Fetching token from DB for direct push.`);
       try {
@@ -315,14 +373,11 @@ io.on('connection', (socket) => {
       } catch (dbErr) {
         console.error("Error fetching receiver token from DB:", dbErr);
       }
-    } else {
-      console.log(`Receiver ${data.receiverId} is online, skipping push notification.`);
     }
   });
 
-  // WebRTC Signaling & Call Log Events
   socket.on('callUser', async ({ userToCall, signalData, from, name, callType }) => {
-    const log = new CallLog({ caller: from, receiver: userToCall, callType, direction: 'outgoing' });
+    const log = new CallLog({ caller: from, receiver: userToGroup = userToCall, callType, direction: 'outgoing' });
     await log.save();
     io.to(userToCall).emit('incomingCall', { signal: signalData, from, name, callType, logId: log._id });
   });
@@ -378,4 +433,4 @@ io.on('connection', (socket) => {
 
 const PORT = process.env.PORT || `3000`;
 server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
-        
+      
