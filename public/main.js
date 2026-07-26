@@ -52,33 +52,34 @@ window.onload = () => {
 
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible" && userId) {
-      socket.connect();
-      function sendTokenWithRetry(retries = 5) {
-        if (window.OneSignalDeferred) {
-          window.OneSignalDeferred.push(async function(OneSignal) {
-            try {
-              let subId = OneSignal.User.PushSubscription.id;
-              if (subId) {
-                socket.emit('identify', { userId: userId, subscriptionId: subId });
-              } else if (retries > 0) {
-                setTimeout(() => sendTokenWithRetry(retries - 1), 2000);
-              } else {
-                socket.emit('identify', { userId: userId, subscriptionId: null });
-              }
-            } catch(e) {
-              if (retries > 0) setTimeout(() => sendTokenWithRetry(retries - 1), 2000);
-              else socket.emit('identify', { userId: userId, subscriptionId: null });
-            }
-          });
-        } else {
-          socket.emit('identify', { userId: userId, subscriptionId: null });
-        }
+      if (socket) {
+        socket.connect();
+        identifySocket();
       }
-      sendTokenWithRetry();
       loadDashboardData();
     }
   });
 };
+
+function identifySocket() {
+  if (!userId || !socket) return;
+  function sendTokenWithRetry(retries = 5) {
+    if (window.OneSignalDeferred) {
+      window.OneSignalDeferred.push(async function(OneSignal) {
+        try {
+          let subId = OneSignal.User.PushSubscription.id;
+          socket.emit('identify', { userId: userId, subscriptionId: subId || null });
+        } catch(e) {
+          if (retries > 0) setTimeout(() => sendTokenWithRetry(retries - 1), 2000);
+          else socket.emit('identify', { userId: userId, subscriptionId: null });
+        }
+      });
+    } else {
+      socket.emit('identify', { userId: userId, subscriptionId: null });
+    }
+  }
+  sendTokenWithRetry();
+}
 
 function toggleTheme() {
   if(document.body.classList.contains('dark-theme')) {
@@ -230,33 +231,15 @@ function showDashboard() {
   socket = io({
     reconnection: true,
     reconnectionAttempts: Infinity,
-    reconnectionDelay: 1000,
+    reconnectionDelay: 500,
     timeout: 20000
   });
 
-  socket.on('connect', async () => {
-    function sendTokenWithRetry(retries = 5) {
-      if (window.OneSignalDeferred) {
-        window.OneSignalDeferred.push(async function(OneSignal) {
-          try {
-            let subId = OneSignal.User.PushSubscription.id;
-            if (subId) {
-              socket.emit('identify', { userId: userId, subscriptionId: subId });
-            } else if (retries > 0) {
-              setTimeout(() => sendTokenWithRetry(retries - 1), 2000);
-            } else {
-              socket.emit('identify', { userId: userId, subscriptionId: null });
-            }
-          } catch(e) {
-            if (retries > 0) setTimeout(() => sendTokenWithRetry(retries - 1), 2000);
-            else socket.emit('identify', { userId: userId, subscriptionId: null });
-          }
-        });
-      } else {
-        socket.emit('identify', { userId: userId, subscriptionId: null });
-      }
+  socket.on('connect', () => {
+    identifySocket();
+    if (activeGroupId) {
+      socket.emit('joinGroup', activeGroupId);
     }
-    sendTokenWithRetry();
   });
 
   initPeerJS();
@@ -331,7 +314,7 @@ function initPeerJS() {
     window.incomingPeerCallObj = call;
     window.incomingCallType = callType;
   });
-}
+            }
 // ==========================================
 // PART 2: CALLS SETUP & MEDIA CONTROLS
 // ==========================================
@@ -494,8 +477,8 @@ function toggleVideo() {
     }
   }
 }
- // ==========================================
-// PART 3: LOADERS, DELETE FRIEND & DASHBOARD
+// ==========================================
+// PART 3: LOADERS, DASHBOARD & STATUSES
 // ==========================================
 
 function encryptText(text, key) { return btoa(encodeURIComponent(text)); }
@@ -629,7 +612,6 @@ async function loadCallLogs() {
   });
 }
 
-// CLEAR CALL LOGS FUNCTION (NEWLY ADDED)
 async function clearCallLogs() {
   if (!confirm("Are you sure you want to clear all call history?")) return;
   try {
@@ -645,9 +627,6 @@ async function clearCallLogs() {
     alert("Error clearing call history");
   }
 }
-// ==========================================
-// PART 4: STATUS CREATOR & VIEWERS MODAL
-// ==========================================
 
 async function openStatusCreator() {
   const text = prompt("Enter status text message:");
@@ -721,7 +700,7 @@ async function deleteStatus(statusId) {
   }
 }
 // ==========================================
-// PART 5: ADVANCED GROUPS & RESTRICTION CONTROLS
+// PART 4: GROUPS, CHAT RENDERING & MESSAGING
 // ==========================================
 
 async function createNewGroup() {
@@ -878,9 +857,6 @@ function renderGroupMessage(msg) {
   display.innerHTML += `<div class="msg ${type}" id="msg-${msg._id}">${contentHtml}</div>`;
   display.scrollTop = display.scrollHeight;
 }
-// ==========================================
-// PART 6: CHAT RENDERING, MESSAGING & ACTIONS
-// ==========================================
 
 async function sendFriendRequest() {
   const target = document.getElementById('target-username').value;
