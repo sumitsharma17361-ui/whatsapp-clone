@@ -50,7 +50,7 @@ app.use(express.json({ limit: '100mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 mongoose.connect(process.env.MONGODB_URI)
-  .then(() => console.log('MongoDB Connected (Advanced Groups & Restriction Ready)'))
+  .then(() => console.log('MongoDB Connected (Advanced Groups & Clear Calls Ready)[span_1](start_span)[span_1](end_span)'))
   .catch(err => console.error('DB Connection Error:', err));
 
 async function sendPushNotification(subscriptionId, heading, message) {
@@ -308,6 +308,14 @@ app.get('/api/calls', auth, async (req, res) => {
       .sort('-timestamp');
     res.json(logs);
   } catch (err) { res.status(500).json({ error: 'Failed' }); }
+});
+
+// CLEAR CALL HISTORY API (NEWLY ADDED)
+app.delete('/api/calls/clear', auth, async (req, res) => {
+  try {
+    await CallLog.deleteMany({ $or: [{ caller: req.user.userId }, { receiver: req.user.userId }] });
+    res.json({ message: 'Call history cleared successfully' });
+  } catch (err) { res.status(500).json({ error: 'Failed to clear call history' }); }
 });
 
 app.get('/api/messages/:friendId', auth, async (req, res) => {
