@@ -7,6 +7,7 @@ let token = localStorage.getItem('token');
 let userId = localStorage.getItem('userId');
 let username = localStorage.getItem('username');
 let activeFriendId = null;
+let activeGroupId = null; // Group chat tracking
 let selectedFile = null;
 let replyMessageData = null;
 
@@ -49,7 +50,6 @@ window.onload = () => {
     document.body.classList.add('dark-theme');
   }
 
-  // Handle app visibility change to re-identify socket when app comes back to foreground
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible" && userId) {
       socket.connect();
@@ -250,7 +250,6 @@ function showDashboard() {
             let subId = OneSignal.User.PushSubscription.id;
             if (subId) {
               socket.emit('identify', { userId: userId, subscriptionId: subId });
-              console.log("OneSignal subscription ID sent to server:", subId);
             } else if (retries > 0) {
               setTimeout(() => sendTokenWithRetry(retries - 1), 2000);
             } else {
@@ -288,6 +287,19 @@ function showDashboard() {
       renderSingleMessage(msg);
       if(msgSender === String(activeFriendId)) socket.emit('readEmit', { msgId: msg._id, senderId: msgSender });
     }
+  });
+
+  socket.on('receiveGroupMessage', (msg) => {
+    if (activeGroupId && String(msg.group) === String(activeGroupId)) {
+      if(String(msg.sender._id) !== String(userId)) {
+        try { notifySound.play(); } catch(e){}
+      }
+      renderGroupMessage(msg);
+    }
+  });
+
+  socket.on('groupCreated', () => {
+    loadDashboardData();
   });
 
   socket.on('typingEmit', ({ senderId, isTyping }) => {
@@ -355,9 +367,10 @@ function initPeerJS() {
     window.incomingPeerCallObj = call;
     window.incomingCallType = callType;
   });
-}
-  // ==========================================
-// PART 2: CALLS SETUP, STATUS & DASHBOARD LOADERS
+  }
+
+// ==========================================
+// PART 2: CALLS SETUP & MEDIA CONTROLS
 // ==========================================
 
 function startCallTimer() {
@@ -582,6 +595,10 @@ function toggleVideo() {
   }
 }
 
+// ==========================================
+// PART 3: LOADERS, STATUS VIEWERS & DASHBOARD
+// ==========================================
+
 function encryptText(text, key) { return btoa(encodeURIComponent(text)); }
 function decryptText(encodedText, key) { try { return decodeURIComponent(atob(encodedText)); } catch(e) { return "🔒 Decryption Failed"; } }
 
@@ -618,6 +635,21 @@ async function loadDashboardData() {
   const chatsSublist = document.getElementById('chats-sublist');
   chatsSublist.innerHTML = '';
   
+  if (data.groups && data.groups.length > 0) {
+    chatsSublist.innerHTML += `<div style="padding:6px 12px; font-size:11px; font-weight:bold; color:var(--text-secondary);">GROUPS</div>`;
+    data.groups.forEach(g => {
+      chatsSublist.innerHTML += `
+        <div class="list-item" onclick="openGroupChat('${g._id}', '${g.name}')">
+          <div style="display:flex; align-items:center; gap:10px;">
+            <div style="width:38px; height:38px; border-radius:50%; background:#00a884; color:#fff; display:flex; align-items:center; justify-content:center; font-weight:bold;">👥</div>
+            <span style="font-weight:600;">${g.name}</span>
+          </div>
+          <span style="font-size:12px; color:#00a884;">Group</span>
+        </div>`;
+    });
+    chatsSublist.innerHTML += `<div style="padding:6px 12px; font-size:11px; font-weight:bold; color:var(--text-secondary);">CHATS</div>`;
+  }
+
   let sortedFriends = (data.friends || []).sort((a, b) => {
     const isAPinned = pinnedFriends.includes(a._id);
     const isBPinned = pinnedFriends.includes(b._id);
@@ -659,7 +691,7 @@ async function loadStatuses() {
           </div>
           <div>
             <span style="font-weight:600; display:block;">${st.user.username}</span>
-            <span style="font-size:12px; color:var(--text-secondary);">Today at ${timeAgo}</span>
+            <span style="font-size:12px; color:var(--text-secondary);">Today at ${timeAgo} (${st.viewers ? st.viewers.length : 0} views)</span>
           </div>
         </div>
       </div>`;
@@ -699,10 +731,7 @@ async function loadCallLogs() {
         <span style="font-size:18px; cursor:pointer;" onclick="openChat('${otherUser._id}', '${otherUser.username}', true, '${avatar}', new Date())">${callIconSymbol}</span>
       </div>`;
   });
-    }
-      // ==========================================
-// PART 3: CHAT, MESSAGING, RENDERING & ACTIONS
-// ==========================================
+}
 
 async function openStatusCreator() {
   const text = prompt("Enter status text message:");
@@ -760,9 +789,14 @@ function viewStatus(st) {
   fetch(`/api/status/view/${st._id}`, { method: 'POST', headers: headers() });
 
   const isMyStatus = String(st.user._id || st.user) === String(userId);
-
   const existingModal = document.querySelector('.status-story-modal');
   if (existingModal) existingModal.remove();
+
+  let viewersHtml = '';
+  if (isMyStatus && st.viewers && st.viewers.length > 0) {
+    let viewerListItems = st.viewers.map(v => `<div style="display:flex; align-items:center; gap:8px; margin:4px 0;"><img src="${v.profilePic || 'https://www.w3schools.com/howto/img_avatar.png'}" style="width:24px;height:24px;border-radius:50%;"><span>${v.username}</span></div>`).join('');
+    viewersHtml = `<div style="position:absolute; bottom:20px; background:rgba(0,0,0,0.8); padding:10px 15px; border-radius:8px; color:white; max-height:150px; overflow-y:auto; width:80%;"><b>Viewed by (${st.viewers.length}):</b>${viewerListItems}</div>`;
+  }
 
   const modal = document.createElement('div');
   modal.className = 'status-story-modal';
@@ -771,15 +805,15 @@ function viewStatus(st) {
   let mediaHtml = '';
   if (st.mediaUrl) {
     if (st.mediaType === 'video') {
-      mediaHtml = `<video src="${st.mediaUrl}" controls autoplay style="max-width:100%; max-height:75vh; object-fit:contain; background:#000;"></video>`;
+      mediaHtml = `<video src="${st.mediaUrl}" controls autoplay style="max-width:100%; max-height:65vh; object-fit:contain; background:#000;"></video>`;
     } else {
-      mediaHtml = `<img src="${st.mediaUrl}" style="max-width:100%; max-height:75vh; object-fit:contain; background:#000;">`;
+      mediaHtml = `<img src="${st.mediaUrl}" style="max-width:100%; max-height:65vh; object-fit:contain; background:#000;">`;
     }
   }
 
   let textHtml = '';
   if (st.text) {
-    textHtml = `<div style="margin-top:15px; color:#fff; font-size:18px; text-align:center; background:rgba(0,0,0,0.6); padding:12px 20px; border-radius:8px; max-width:80%;">${st.text}</div>`;
+    textHtml = `<div style="margin-top:10px; color:#fff; font-size:16px; text-align:center; background:rgba(0,0,0,0.6); padding:8px 15px; border-radius:8px; max-width:80%;">${st.text}</div>`;
   }
 
   modal.innerHTML = `
@@ -787,14 +821,12 @@ function viewStatus(st) {
       <img src="${st.user.profilePic || 'https://www.w3schools.com/howto/img_avatar.png'}" style="width:40px; height:40px; border-radius:50%; object-fit:cover; border:2px solid #00a884;">
       <span style="font-weight:bold; font-size:16px; color:white;">${st.user.username}</span>
     </div>
-    
     ${isMyStatus ? `<button onclick="deleteStatus('${st._id}')" style="position:absolute; top:30px; right:70px; background:#ea0038; color:white; border:none; padding:8px 14px; border-radius:6px; cursor:pointer; font-weight:bold; z-index:10; font-size:13px;">🗑️ Delete</button>` : ''}
-    
     <span onclick="this.parentElement.remove()" style="position:absolute; top:20px; right:25px; font-size:36px; cursor:pointer; z-index:10; color:white;">&times;</span>
-    
     <div style="background:${st.bgColor || '#111b21'}; width:100%; height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; position:relative; padding:20px;">
       ${mediaHtml}
       ${textHtml}
+      ${viewersHtml}
     </div>
   `;
   document.body.appendChild(modal);
@@ -802,10 +834,7 @@ function viewStatus(st) {
 
 async function deleteStatus(statusId) {
   if (confirm("Are you sure you want to delete this status?")) {
-    const res = await fetch(`/api/status/${statusId}`, {
-      method: 'DELETE',
-      headers: headers()
-    });
+    const res = await fetch(`/api/status/${statusId}`, { method: 'DELETE', headers: headers() });
     if (res.ok) {
       alert("Status deleted successfully!");
       document.querySelector('.status-story-modal').remove();
@@ -814,6 +843,343 @@ async function deleteStatus(statusId) {
       alert("Failed to delete status");
     }
   }
+}
+// ==========================================
+// PART 3: LOADERS, STATUS VIEWERS & DASHBOARD
+// ==========================================
+
+function encryptText(text, key) { return btoa(encodeURIComponent(text)); }
+function decryptText(encodedText, key) { try { return decodeURIComponent(atob(encodedText)); } catch(e) { return "🔒 Decryption Failed"; } }
+
+function handleTyping() {
+  if (!activeFriendId) return;
+  socket.emit('typing', { receiverId: activeFriendId, isTyping: true });
+  clearTimeout(typingTimeout);
+  typingTimeout = setTimeout(() => {
+    socket.emit('typing', { receiverId: activeFriendId, isTyping: false });
+  }, 1500);
+}
+
+function togglePinFriend(e, friendId) {
+  e.stopPropagation();
+  if (pinnedFriends.includes(friendId)) {
+    pinnedFriends = pinnedFriends.filter(id => id !== friendId);
+  } else {
+    pinnedFriends.push(friendId);
+  }
+  localStorage.setItem('pinnedFriends', JSON.stringify(pinnedFriends));
+  loadDashboardData();
+}
+
+async function loadDashboardData() {
+  const res = await fetch('/api/dashboard', { headers: headers() });
+  const data = await res.json();
+  
+  const reqList = document.getElementById('requests-list');
+  reqList.innerHTML = '';
+  (data.friendRequests || []).forEach(req => {
+    reqList.innerHTML += `<div class="list-item"><span>${req.username}</span><button class="btn-logout" onclick="acceptFriend('${req._id}')">Accept</button></div>`;
+  });
+
+  const chatsSublist = document.getElementById('chats-sublist');
+  chatsSublist.innerHTML = '';
+  
+  if (data.groups && data.groups.length > 0) {
+    chatsSublist.innerHTML += `<div style="padding:6px 12px; font-size:11px; font-weight:bold; color:var(--text-secondary);">GROUPS</div>`;
+    data.groups.forEach(g => {
+      chatsSublist.innerHTML += `
+        <div class="list-item" onclick="openGroupChat('${g._id}', '${g.name}')">
+          <div style="display:flex; align-items:center; gap:10px;">
+            <div style="width:38px; height:38px; border-radius:50%; background:#00a884; color:#fff; display:flex; align-items:center; justify-content:center; font-weight:bold;">👥</div>
+            <span style="font-weight:600;">${g.name}</span>
+          </div>
+          <span style="font-size:12px; color:#00a884;">Group</span>
+        </div>`;
+    });
+    chatsSublist.innerHTML += `<div style="padding:6px 12px; font-size:11px; font-weight:bold; color:var(--text-secondary);">CHATS</div>`;
+  }
+
+  let sortedFriends = (data.friends || []).sort((a, b) => {
+    const isAPinned = pinnedFriends.includes(a._id);
+    const isBPinned = pinnedFriends.includes(b._id);
+    return isBPinned - isAPinned;
+  });
+
+  sortedFriends.forEach(f => {
+    const avatar = f.profilePic || 'https://www.w3schools.com/howto/img_avatar.png';
+    const isPinned = pinnedFriends.includes(f._id);
+    chatsSublist.innerHTML += `
+      <div class="list-item" onclick="openChat('${f._id}', '${f.username}', ${f.isOnline}, '${avatar}', '${f.lastSeen}')">
+        <div style="display:flex; align-items:center; gap:10px; position:relative;">
+          <img src="${avatar}" style="width:38px; height:38px; border-radius:50%; object-fit:cover;">
+          ${f.isOnline ? '<span class="online-dot"></span>' : ''}
+          <span style="font-weight:600;">${f.username} ${isPinned ? '<span class="pin-icon">📌</span>':''}</span>
+        </div>
+        <div style="display:flex; align-items:center; gap:8px;">
+          <span id="status-${f._id}" style="font-size:12px; color:${f.isOnline ? '#25d366':'#8696a0'}">${f.isOnline ? 'Online':'Offline'}</span>
+          <span onclick="togglePinFriend(event, '${f._id}')" style="cursor:pointer; font-size:14px;" title="Pin Chat">${isPinned ? '📍':'📌'}</span>
+        </div>
+      </div>`;
+  });
+}
+
+async function loadStatuses() {
+  const res = await fetch('/api/status', { headers: headers() });
+  const statuses = await res.json();
+  const list = document.getElementById('statuses-list');
+  list.innerHTML = '';
+
+  statuses.forEach(st => {
+    const avatar = st.user.profilePic || 'https://www.w3schools.com/howto/img_avatar.png';
+    const timeAgo = new Date(st.createdAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+    list.innerHTML += `
+      <div class="list-item" onclick='viewStatus(${JSON.stringify(st)})'>
+        <div style="display:flex; align-items:center; gap:10px;">
+          <div class="status-ring">
+            <img src="${avatar}" style="width:38px; height:38px; border-radius:50%; object-fit:cover;">
+          </div>
+          <div>
+            <span style="font-weight:600; display:block;">${st.user.username}</span>
+            <span style="font-size:12px; color:var(--text-secondary);">Today at ${timeAgo} (${st.viewers ? st.viewers.length : 0} views)</span>
+          </div>
+        </div>
+      </div>`;
+  });
+}
+
+async function loadCallLogs() {
+  const res = await fetch('/api/calls', { headers: headers() });
+  const logs = await res.json();
+  const list = document.getElementById('calls-list');
+  list.innerHTML = '';
+
+  if(logs.length === 0) {
+    list.innerHTML = `<div style="padding:30px; text-align:center; color:var(--text-secondary); font-size:13px;">No recent calls</div>`;
+    return;
+  }
+
+  logs.forEach(log => {
+    const isCaller = String(log.caller._id || log.caller) === String(userId);
+    const otherUser = isCaller ? log.receiver : log.caller;
+    if(!otherUser) return;
+
+    const avatar = otherUser.profilePic || 'https://www.w3schools.com/howto/img_avatar.png';
+    const timeStr = new Date(log.timestamp).toLocaleString([], {month: 'short', day: 'numeric', hour: '2-digit', minute:'2-digit'});
+    const arrowIcon = isCaller ? '<span style="color:#25d366;">↗</span>' : '<span style="color:#00a884;">↙</span>';
+    const callIconSymbol = log.callType === 'video' ? '📹' : '📞';
+
+    list.innerHTML += `
+      <div class="list-item">
+        <div style="display:flex; align-items:center; gap:10px;">
+          <img src="${avatar}" style="width:38px; height:38px; border-radius:50%; object-fit:cover;">
+          <div>
+            <span style="font-weight:600; display:block; font-size:14px;">${otherUser.username}</span>
+            <span style="font-size:12px; color:var(--text-secondary);">${arrowIcon} ${timeStr}</span>
+          </div>
+        </div>
+        <span style="font-size:18px; cursor:pointer;" onclick="openChat('${otherUser._id}', '${otherUser.username}', true, '${avatar}', new Date())">${callIconSymbol}</span>
+      </div>`;
+  });
+}
+
+async function openStatusCreator() {
+  const text = prompt("Enter status text message:");
+  if(text !== null) {
+    if(!text.trim()) return;
+    const res = await fetch('/api/status', {
+      method: 'POST',
+      headers: headers(),
+      body: JSON.stringify({ mediaType: 'text', text, bgColor: '#111b21' })
+    });
+    if(res.ok) {
+      alert("Text status uploaded!");
+      loadStatuses();
+    }
+  }
+}
+
+async function uploadStatusMedia(input) {
+  const file = input.files[0];
+  if(!file) return;
+
+  const reader = new FileReader();
+  reader.onload = async function(e) {
+    const fileData = e.target.result;
+    const mediaType = file.type.startsWith('video/') ? 'video' : 'image';
+
+    const uploadRes = await fetch('/api/upload', {
+      method: 'POST',
+      headers: headers(),
+      body: JSON.stringify({ fileName: file.name, fileData })
+    });
+    const uploadData = await uploadRes.json();
+    if(uploadData.error) return alert("Upload failed");
+
+    const statusRes = await fetch('/api/status', {
+      method: 'POST',
+      headers: headers(),
+      body: JSON.stringify({ 
+        mediaType, 
+        mediaUrl: uploadData.fileUrl, 
+        text: prompt("Add a caption (optional):") || "" 
+      })
+    });
+
+    if(statusRes.ok) {
+      alert("Media status uploaded successfully!");
+      loadStatuses();
+    }
+    input.value = '';
+  };
+  reader.readAsDataURL(file);
+}
+
+function viewStatus(st) {
+  fetch(`/api/status/view/${st._id}`, { method: 'POST', headers: headers() });
+
+  const isMyStatus = String(st.user._id || st.user) === String(userId);
+  const existingModal = document.querySelector('.status-story-modal');
+  if (existingModal) existingModal.remove();
+
+  let viewersHtml = '';
+  if (isMyStatus && st.viewers && st.viewers.length > 0) {
+    let viewerListItems = st.viewers.map(v => `<div style="display:flex; align-items:center; gap:8px; margin:4px 0;"><img src="${v.profilePic || 'https://www.w3schools.com/howto/img_avatar.png'}" style="width:24px;height:24px;border-radius:50%;"><span>${v.username}</span></div>`).join('');
+    viewersHtml = `<div style="position:absolute; bottom:20px; background:rgba(0,0,0,0.8); padding:10px 15px; border-radius:8px; color:white; max-height:150px; overflow-y:auto; width:80%;"><b>Viewed by (${st.viewers.length}):</b>${viewerListItems}</div>`;
+  }
+
+  const modal = document.createElement('div');
+  modal.className = 'status-story-modal';
+  modal.style.cssText = "position:fixed; top:0; left:0; width:100vw; height:100vh; background:#000; z-index:4000; display:flex; flex-direction:column; align-items:center; justify-content:center;";
+  
+  let mediaHtml = '';
+  if (st.mediaUrl) {
+    if (st.mediaType === 'video') {
+      mediaHtml = `<video src="${st.mediaUrl}" controls autoplay style="max-width:100%; max-height:65vh; object-fit:contain; background:#000;"></video>`;
+    } else {
+      mediaHtml = `<img src="${st.mediaUrl}" style="max-width:100%; max-height:65vh; object-fit:contain; background:#000;">`;
+    }
+  }
+
+  let textHtml = '';
+  if (st.text) {
+    textHtml = `<div style="margin-top:10px; color:#fff; font-size:16px; text-align:center; background:rgba(0,0,0,0.6); padding:8px 15px; border-radius:8px; max-width:80%;">${st.text}</div>`;
+  }
+
+  modal.innerHTML = `
+    <div style="position:absolute; top:30px; left:20px; display:flex; align-items:center; gap:10px; z-index:10;">
+      <img src="${st.user.profilePic || 'https://www.w3schools.com/howto/img_avatar.png'}" style="width:40px; height:40px; border-radius:50%; object-fit:cover; border:2px solid #00a884;">
+      <span style="font-weight:bold; font-size:16px; color:white;">${st.user.username}</span>
+    </div>
+    ${isMyStatus ? `<button onclick="deleteStatus('${st._id}')" style="position:absolute; top:30px; right:70px; background:#ea0038; color:white; border:none; padding:8px 14px; border-radius:6px; cursor:pointer; font-weight:bold; z-index:10; font-size:13px;">🗑️ Delete</button>` : ''}
+    <span onclick="this.parentElement.remove()" style="position:absolute; top:20px; right:25px; font-size:36px; cursor:pointer; z-index:10; color:white;">&times;</span>
+    <div style="background:${st.bgColor || '#111b21'}; width:100%; height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; position:relative; padding:20px;">
+      ${mediaHtml}
+      ${textHtml}
+      ${viewersHtml}
+    </div>
+  `;
+  document.body.appendChild(modal);
+}
+
+async function deleteStatus(statusId) {
+  if (confirm("Are you sure you want to delete this status?")) {
+    const res = await fetch(`/api/status/${statusId}`, { method: 'DELETE', headers: headers() });
+    if (res.ok) {
+      alert("Status deleted successfully!");
+      document.querySelector('.status-story-modal').remove();
+      loadStatuses();
+    } else {
+      alert("Failed to delete status");
+    }
+  }
+}
+// ==========================================
+// PART 4: GROUPS, CHAT RENDERING & INSTANT SEND
+// ==========================================
+
+async function createNewGroup() {
+  const groupName = prompt("Enter Group Name:");
+  if(!groupName) return;
+  const friendUsernames = prompt("Enter friend usernames to add (comma separated):");
+  
+  const res = await fetch('/api/dashboard', { headers: headers() });
+  const data = await res.json();
+  let memberIds = [];
+  
+  if (friendUsernames) {
+    const names = friendUsernames.split(',').map(n => n.trim());
+    data.friends.forEach(f => {
+      if(names.includes(f.username)) memberIds.push(f._id);
+    });
+  }
+
+  const createRes = await fetch('/api/groups/create', {
+    method: 'POST',
+    headers: headers(),
+    body: JSON.stringify({ name: groupName, memberIds })
+  });
+  const createData = await createRes.json();
+  if(createData.message) {
+    alert("Group created successfully!");
+    loadDashboardData();
+  } else {
+    alert(createData.error || "Failed");
+  }
+}
+
+async function openGroupChat(groupId, groupName) {
+  activeGroupId = groupId;
+  activeFriendId = null;
+  toggleSidebar(false);
+  document.getElementById('chat-placeholder').classList.add('hidden');
+  document.getElementById('active-chat').classList.remove('hidden');
+  document.getElementById('active-friend-name').innerText = groupName + " (Group)";
+  document.getElementById('active-friend-avatar').src = 'https://www.w3schools.com/howto/img_avatar.png';
+  document.getElementById('active-friend-status').innerText = 'Group Chat';
+
+  socket.emit('joinGroup', groupId);
+
+  const res = await fetch(`/api/groups/messages/${groupId}`, { headers: headers() });
+  let messages = await res.json();
+  const display = document.getElementById('messages-display');
+  display.innerHTML = '';
+  
+  messages.forEach(msg => {
+     renderGroupMessage(msg);
+  });
+}
+
+function renderGroupMessage(msg) {
+  const display = document.getElementById('messages-display');
+  const msgSenderId = String(msg.sender._id || msg.sender);
+  const type = msgSenderId === String(userId) ? 'sent' : 'received';
+  
+  let contentHtml = `<div class="media-box" id="msg-container-${msg._id}">`;
+  if(type === 'received') {
+    contentHtml += `<div style="font-size:11px; font-weight:bold; color:#00a884; margin-bottom:2px;">${msg.sender.username}</div>`;
+  }
+
+  if (msg.fileUrl) {
+      if (msg.fileType.startsWith('image/')) {
+        contentHtml += `<img src="${msg.fileUrl}" onclick="openImageModal('${msg.fileUrl}')" style="cursor:pointer;">`;
+      } else if (msg.fileType.startsWith('video/')) {
+        contentHtml += `<video src="${msg.fileUrl}" controls></video>`;
+      } else if (msg.fileType.startsWith('audio/')) {
+        contentHtml += `<audio src="${msg.fileUrl}" controls style="width:100%; margin:4px 0;"></audio>`;
+      } else {
+        contentHtml += `<div style="padding:10px; background:#0000000d; border-radius:6px; margin-bottom:5px;">📄 ${msg.fileName}</div>`;
+      }
+      contentHtml += `<a href="${msg.fileUrl}" download="${msg.fileName}" style="color:#00a884; text-decoration:none; font-size:12px; font-weight:bold; display:block; margin-top:6px;">⬇ Download File</a>`;
+  }
+  
+  if (msg.text) contentHtml += `<p style="margin-top:4px;">${msg.text}</p>`;
+
+  const timeString = new Date(msg.timestamp || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  contentHtml += `<div style="float:right; font-size:10px; color:#667781; margin-top:2px; margin-left:8px;">${timeString}</div>`;
+  contentHtml += '</div>';
+  
+  display.innerHTML += `<div class="msg ${type}" id="msg-${msg._id}">${contentHtml}</div>`;
+  display.scrollTop = display.scrollHeight;
 }
 
 async function sendFriendRequest() {
@@ -831,6 +1197,7 @@ async function acceptFriend(requesterId) {
 
 async function openChat(friendId, friendName, isOnline, avatar, lastSeen) {
   activeFriendId = friendId;
+  activeGroupId = null;
   toggleSidebar(false);
   document.getElementById('chat-placeholder').classList.add('hidden');
   document.getElementById('active-chat').classList.remove('hidden');
@@ -895,10 +1262,7 @@ async function clearFullChat() {
   if(!activeFriendId) return;
   if(confirm("Are you sure you want to clear this entire chat?")) {
     try {
-      const res = await fetch(`/api/messages/clear/${activeFriendId}`, {
-        method: 'DELETE',
-        headers: headers()
-      });
+      const res = await fetch(`/api/messages/clear/${activeFriendId}`, { method: 'DELETE', headers: headers() });
       const data = await res.json();
       if(data.message) {
         document.getElementById('messages-display').innerHTML = '';
@@ -1030,6 +1394,32 @@ async function sendMessage() {
   let currentReplyTo = replyMessageData;
   cancelReply();
 
+  if (activeGroupId) {
+    if (selectedFile) {
+      const filePayload = selectedFile;
+      selectedFile = null;
+      document.getElementById('file-input').value = "";
+      input.value = '';
+      
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", "/api/upload", true);
+      xhr.setRequestHeader("Content-Type", "application/json");
+      xhr.onload = function() {
+        if (xhr.status === 200) {
+          const response = JSON.parse(xhr.responseText);
+          if (response.fileUrl) {
+            socket.emit('sendGroupMessage', { groupId: activeGroupId, senderId: userId, text: textToSend, fileUrl: response.fileUrl, fileName: filePayload.name, fileType: filePayload.type });
+          }
+        }
+      };
+      xhr.send(JSON.stringify({ fileName: filePayload.name, fileData: filePayload.data }));
+    } else {
+      socket.emit('sendGroupMessage', { groupId: activeGroupId, senderId: userId, text: textToSend });
+      input.value = '';
+    }
+    return;
+  }
+
   if (selectedFile) {
     const filePayload = selectedFile; 
     selectedFile = null; 
@@ -1105,5 +1495,4 @@ async function sendMessage() {
 function logout() { 
   localStorage.clear(); 
   window.location.reload(); 
-    }
-    
+}
