@@ -765,8 +765,8 @@ async function openGroupInfoModal(groupId) {
   let membersHtml = group.members.map(m => `
     <div style="display:flex; justify-content:space-between; align-items:center; margin:6px 0; background:rgba(255,255,255,0.05); padding:8px; border-radius:6px;">
       <div style="display:flex; align-items:center; gap:8px;">
-        <img src="${m.profilePic || 'https://www.w3schools.com/howto/img_avatar.png'}" style="width:28px; height:28px; border-radius:50%;">
-        <span style="color:white; font-size:14px;">${m.username} ${m._id === group.admin._id ? '(Admin)':''}</span>
+        <img src="${m.profilePic || 'https://www.w3schools.com/howto/img_avatar.png'}" style="width:28px; height:28px; border-radius:50%; object-fit:cover;">
+        <span style="color:var(--text-primary); font-size:14px; font-weight:600;">${m.username} ${m._id === group.admin._id ? '(Admin)':''}</span>
       </div>
       ${isAdmin && m._id !== userId ? `<button onclick="removeGroupMember('${groupId}', '${m._id}')" style="background:#ea0038; color:white; border:none; padding:4px 8px; border-radius:4px; font-size:11px; cursor:pointer;">Remove</button>` : ''}
     </div>`).join('');
@@ -860,7 +860,7 @@ function renderGroupMessage(msg) {
   contentHtml += `<div style="float:right; font-size:10px; color:#667781; margin-top:2px; margin-left:8px;">${timeString}</div></div>`;
   display.innerHTML += `<div class="msg ${type}" id="msg-${msg._id}">${contentHtml}</div>`;
   display.scrollTop = display.scrollHeight;
-}
+                                                        }
 // ==========================================
 // PART 6: CHAT RENDERING, MESSAGING & ACTIONS
 // ==========================================
@@ -1104,3 +1104,4 @@ async function sendMessage() {
 }
 
 function logout() { localStorage.clear(); window.location.reload(); }
+    
