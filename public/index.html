@@ -155,7 +155,10 @@
 
         <!-- CALLS TAB VIEW -->
         <div id="calls-view-container" class="list-container hidden">
-          <div class="section-title">RECENT CALLS</div>
+          <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px 15px; border-bottom: 1px solid var(--border-color);">
+            <div class="section-title" style="margin: 0; padding: 0;">RECENT CALLS</div>
+            <button onclick="clearCallLogs()" style="background:#ea0038; color:white; border:none; padding:5px 10px; border-radius:6px; cursor:pointer; font-size:11px; font-weight:bold;">🗑️ Clear Log</button>
+          </div>
           <div id="calls-list"></div>
         </div>
       </div>
