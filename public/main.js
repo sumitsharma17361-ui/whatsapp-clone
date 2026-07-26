@@ -1,3 +1,7 @@
+// ==========================================
+// PART 1: INIT, SOCKET, AUTH & DASHBOARD
+// ==========================================
+
 let socket;
 let token = localStorage.getItem('token');
 let userId = localStorage.getItem('userId');
@@ -47,7 +51,7 @@ window.onload = () => {
 
   // Handle app visibility change to re-identify socket when app comes back to foreground
   document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible" && socket && userId) {
+    if (document.visibilityState === "visible" && userId) {
       socket.connect();
       function sendTokenWithRetry(retries = 5) {
         if (window.OneSignalDeferred) {
@@ -329,7 +333,6 @@ function showDashboard() {
   loadDashboardData();
 }
 
-// --- PEERJS CALL SETUP & ADVANCED FEATURES ---
 function initPeerJS() {
   peer = new Peer(userId, {
     host: '0.peerjs.com',
@@ -353,6 +356,9 @@ function initPeerJS() {
     window.incomingCallType = callType;
   });
 }
+  // ==========================================
+// PART 2: CALLS SETUP, STATUS & DASHBOARD LOADERS
+// ==========================================
 
 function startCallTimer() {
   callSeconds = 0;
@@ -575,7 +581,6 @@ function toggleVideo() {
     }
   }
 }
-// --- END OF PEERJS CALL SETUP ---
 
 function encryptText(text, key) { return btoa(encodeURIComponent(text)); }
 function decryptText(encodedText, key) { try { return decodeURIComponent(atob(encodedText)); } catch(e) { return "🔒 Decryption Failed"; } }
@@ -694,7 +699,10 @@ async function loadCallLogs() {
         <span style="font-size:18px; cursor:pointer;" onclick="openChat('${otherUser._id}', '${otherUser.username}', true, '${avatar}', new Date())">${callIconSymbol}</span>
       </div>`;
   });
-}
+    }
+      // ==========================================
+// PART 3: CHAT, MESSAGING, RENDERING & ACTIONS
+// ==========================================
 
 async function openStatusCreator() {
   const text = prompt("Enter status text message:");
@@ -1062,7 +1070,8 @@ async function sendMessage() {
         const response = JSON.parse(xhr.responseText);
         if (response.fileUrl) {
           let cipherText = textToSend ? encryptText(textToSend, mockEncryptionKey) : "";
-          socket.emit('sendMessage', { senderId: userId, receiverId: activeFriendId, text: cipherText, fileUrl: response.fileUrl, fileName: filePayload.name, fileType: filePayload.type, timestamp: timestamp, isEncrypted: true, replyTo: currentReplyTo });
+          const msgPayload = { senderId: userId, receiverId: activeFriendId, text: cipherText, fileUrl: response.fileUrl, fileName: filePayload.name, fileType: filePayload.type, timestamp: timestamp, isEncrypted: true, replyTo: currentReplyTo };
+          socket.emit('sendMessage', msgPayload);
         }
       } else { 
         alert("File upload failed."); 
@@ -1074,12 +1083,27 @@ async function sendMessage() {
 
   } else {
     let encryptedSecret = encryptText(textToSend, mockEncryptionKey);
-    socket.emit('sendMessage', { senderId: userId, receiverId: activeFriendId, text: encryptedSecret, isEncrypted: true, replyTo: currentReplyTo });
+    const timestamp = Date.now();
+    const msgPayload = { senderId: userId, receiverId: activeFriendId, text: encryptedSecret, timestamp: timestamp, isEncrypted: true, replyTo: currentReplyTo };
+    
     input.value = '';
+    socket.emit('sendMessage', msgPayload);
+    
+    renderSingleMessage({
+      _id: 'temp-' + timestamp,
+      sender: { _id: userId },
+      receiver: { _id: activeFriendId },
+      text: textToSend,
+      timestamp: timestamp,
+      status: 'sent',
+      replyTo: currentReplyTo,
+      isEncrypted: false
+    });
   }
 }
 
 function logout() { 
   localStorage.clear(); 
   window.location.reload(); 
-}
+    }
+    
