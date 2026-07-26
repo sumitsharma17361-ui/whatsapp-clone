@@ -50,14 +50,27 @@ window.onload = () => {
     document.body.classList.add('dark-theme');
   }
 
-  document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible" && userId) {
+  // Visibility aur Focus handlers for instant online sync on app switch/open
+  const handleAppResume = () => {
+    if (userId) {
       if (socket) {
-        socket.connect();
+        if (!socket.connected) socket.connect();
         identifySocket();
+      } else if (token) {
+        showDashboard();
       }
       loadDashboardData();
     }
+  };
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") {
+      handleAppResume();
+    }
+  });
+
+  window.addEventListener("focus", () => {
+    handleAppResume();
   });
 };
 
@@ -314,7 +327,8 @@ function initPeerJS() {
     window.incomingPeerCallObj = call;
     window.incomingCallType = callType;
   });
-            }
+}
+
 // ==========================================
 // PART 2: CALLS SETUP & MEDIA CONTROLS
 // ==========================================
