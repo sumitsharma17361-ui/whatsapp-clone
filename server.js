@@ -140,7 +140,7 @@ const auth = (req, res, next) => {
     req.user = decoded;
     next();
   });
-});
+};
 
 // CHANGE PASSWORD API ROUTE
 app.post('/api/change-password', auth, async (req, res) => {
@@ -377,7 +377,7 @@ io.on('connection', (socket) => {
   });
 
   socket.on('callUser', async ({ userToCall, signalData, from, name, callType }) => {
-    const log = new CallLog({ caller: from, receiver: userToGroup = userToCall, callType, direction: 'outgoing' });
+    const log = new CallLog({ caller: from, receiver: userToCall, callType, direction: 'outgoing' });
     await log.save();
     io.to(userToCall).emit('incomingCall', { signal: signalData, from, name, callType, logId: log._id });
   });
@@ -433,4 +433,4 @@ io.on('connection', (socket) => {
 
 const PORT = process.env.PORT || `3000`;
 server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
-      
+                         
