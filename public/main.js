@@ -494,7 +494,7 @@ function toggleVideo() {
     }
   }
 }
-// ==========================================
+ // ==========================================
 // PART 3: LOADERS, DELETE FRIEND & DASHBOARD
 // ==========================================
 
@@ -627,6 +627,23 @@ async function loadCallLogs() {
         <span style="font-size:18px; cursor:pointer;" onclick="openChat('${otherUser._id}', '${otherUser.username}', true, '${avatar}', new Date())">${callIconSymbol}</span>
       </div>`;
   });
+}
+
+// CLEAR CALL LOGS FUNCTION (NEWLY ADDED)
+async function clearCallLogs() {
+  if (!confirm("Are you sure you want to clear all call history?")) return;
+  try {
+    const res = await fetch('/api/calls/clear', { method: 'DELETE', headers: headers() });
+    const data = await res.json();
+    if (data.message) {
+      alert("Call history cleared!");
+      loadCallLogs();
+    } else {
+      alert(data.error || "Failed");
+    }
+  } catch (err) {
+    alert("Error clearing call history");
+  }
 }
 // ==========================================
 // PART 4: STATUS CREATOR & VIEWERS MODAL
@@ -860,7 +877,7 @@ function renderGroupMessage(msg) {
   contentHtml += `<div style="float:right; font-size:10px; color:#667781; margin-top:2px; margin-left:8px;">${timeString}</div></div>`;
   display.innerHTML += `<div class="msg ${type}" id="msg-${msg._id}">${contentHtml}</div>`;
   display.scrollTop = display.scrollHeight;
-                                                        }
+}
 // ==========================================
 // PART 6: CHAT RENDERING, MESSAGING & ACTIONS
 // ==========================================
@@ -1104,4 +1121,3 @@ async function sendMessage() {
 }
 
 function logout() { localStorage.clear(); window.location.reload(); }
-    
