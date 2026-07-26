@@ -444,8 +444,20 @@ io.on('connection', (socket) => {
     io.to(currentUserId).emit('msgDeleted', { msgId });
   });
 
-  socket.on('clearChatEmit', ({ receiverId }) => { io.to(receiverId).emit('chatClearedEvent'); }
-    );
+  socket.on('clearChatEmit', ({ receiverId }) => { io.to(receiverId).emit('chatClearedEvent'); });
+  
+  socket.on('readEmit', async ({ msgId, senderId }) => {
+     await Message.findByIdAndUpdate(msgId, { status: 'read' });
+     io.to(senderId).emit('msgStatusUpdate', { msgId, status: 'read' });
+  });
+
+  socket.on('disconnect', async () => {
+    if (currentUserId) {
+      // Agar yahi current socket map me registered hai tabhi remove karein
+      if (onlineUsers.get(currentUserId) === socket.id) {
+        onlineUsers.delete(currentUserId);
+        const now = new Date();
+        await User.findByIdAndUpdate(currentUserId, { isOnline: false, lastSeen: now });
         io.emit('statusChanged', { userId: currentUserId, isOnline: false, lastSeen: now });
       }
     }
