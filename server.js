@@ -17,6 +17,7 @@ const GroupSchema = new mongoose.Schema({
   name: { type: String, required: true },
   admin: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   members: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+  restrictMessages: { type: Boolean, default: false },
   createdAt: { type: Date, default: Date.now }
 });
 const Group = mongoose.model('Group', GroupSchema);
@@ -49,7 +50,7 @@ app.use(express.json({ limit: '100mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 mongoose.connect(process.env.MONGODB_URI)
-  .then(() => console.log('MongoDB Connected (Advanced Groups & Delete Ready)'))
+  .then(() => console.log('MongoDB Connected (Advanced Groups & Restriction Ready)'))
   .catch(err => console.error('DB Connection Error:', err));
 
 async function sendPushNotification(subscriptionId, heading, message) {
@@ -135,7 +136,6 @@ app.post('/api/friend-request', auth, async (req, res) => {
   res.json({ message: 'Request sent' });
 });
 
-// REMOVE FRIEND API
 app.delete('/api/friend/:friendId', auth, async (req, res) => {
   try {
     const userId = req.user.userId;
@@ -166,7 +166,6 @@ app.post('/api/accept-request', auth, async (req, res) => {
   res.json({ message: 'Accepted' });
 });
 
-// GROUP APIs (Create, Details, Add/Remove Member, Delete Group)
 app.post('/api/groups/create', auth, async (req, res) => {
   try {
     const { name, memberIds } = req.body;
@@ -220,6 +219,20 @@ app.post('/api/groups/remove-member', auth, async (req, res) => {
   } catch(e) { res.status(500).json({ error: 'Failed' }); }
 });
 
+app.post('/api/groups/toggle-restriction', auth, async (req, res) => {
+  try {
+    const { groupId } = req.body;
+    const group = await Group.findById(groupId);
+    if (!group) return res.status(404).json({ error: 'Group not found' });
+    if (group.admin.toString() !== req.user.userId) return res.status(403).json({ error: 'Only admin can change settings' });
+
+    group.restrictMessages = !group.restrictMessages;
+    await group.save();
+    group.members.forEach(mId => io.to(mId.toString()).emit('groupUpdated'));
+    res.json({ message: 'Group settings updated', restrictMessages: group.restrictMessages });
+  } catch(e) { res.status(500).json({ error: 'Failed' }); }
+});
+
 app.delete('/api/groups/:groupId', auth, async (req, res) => {
   try {
     const group = await Group.findById(req.params.groupId);
@@ -249,7 +262,7 @@ app.post('/api/status', auth, async (req, res) => {
     const status = new Status({ user: req.user.userId, mediaUrl: mediaUrl || '', mediaType: mediaType || 'text', text: text || '', bgColor: bgColor || '#111b21', viewers: [] });
     await status.save();
     io.emit('statusUpdated');
-    res.Status(201).json({ message: 'Status uploaded' });
+    res.status(201).json({ message: 'Status uploaded' });
   } catch (err) { res.status(500).json({ error: 'Failed' }); }
 });
 
@@ -336,6 +349,14 @@ io.on('connection', (socket) => {
 
   socket.on('sendGroupMessage', async (data) => {
     const { groupId, senderId, text, fileUrl, fileName, fileType } = data;
+    const group = await Group.findById(groupId);
+    if (!group) return;
+
+    if (group.restrictMessages && group.admin.toString() !== senderId) {
+      socket.emit('errorMessage', { error: 'Only admin can send messages in this group.' });
+      return;
+    }
+
     const msg = new GroupMessage({ group: groupId, sender: senderId, text, fileUrl, fileName, fileType });
     await msg.save();
     const populatedMsg = await GroupMessage.findById(msg._id).populate('sender', 'username profilePic');
@@ -409,4 +430,4 @@ io.on('connection', (socket) => {
 
 const PORT = process.env.PORT || `3000`;
 server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
-      
+    
