@@ -66,11 +66,8 @@ window.onload = () => {
                 socket.emit('identify', { userId: userId, subscriptionId: null });
               }
             } catch(e) {
-              if (retries > 0) {
-                setTimeout(() => sendTokenWithRetry(retries - 1), 2000);
-              } else {
-                socket.emit('identify', { userId: userId, subscriptionId: null });
-              }
+              if (retries > 0) setTimeout(() => sendTokenWithRetry(retries - 1), 2000);
+              else socket.emit('identify', { userId: userId, subscriptionId: null });
             }
           });
         } else {
@@ -285,6 +282,7 @@ function showDashboard() {
     }
   });
 
+  socket.on('errorMessage', (data) => { alert(data.error); });
   socket.on('groupUpdated', () => { loadDashboardData(); });
   socket.on('typingEmit', ({ senderId, isTyping }) => {
     if (String(activeFriendId) === String(senderId)) {
@@ -706,7 +704,7 @@ async function deleteStatus(statusId) {
   }
 }
 // ==========================================
-// PART 5: ADVANCED GROUPS, MEMBERS & MESSAGING
+// PART 5: ADVANCED GROUPS & RESTRICTION CONTROLS
 // ==========================================
 
 async function createNewGroup() {
@@ -736,7 +734,6 @@ async function openGroupChat(groupId, groupName) {
   document.getElementById('active-friend-avatar').src = 'https://www.w3schools.com/howto/img_avatar.png';
   document.getElementById('active-friend-status').innerText = 'Group Chat';
 
-  // Add Group Info / Manage Button in Header if not exists
   let headerActions = document.querySelector('.chat-header-actions');
   let infoBtn = document.getElementById('group-info-btn');
   if(!infoBtn) {
@@ -787,19 +784,31 @@ async function openGroupInfoModal(groupId) {
       <p style="font-size:12px; color:var(--text-secondary); margin-bottom:10px;">Admin: ${group.admin.username}</p>
       
       ${isAdmin ? `
+        <div style="margin-bottom:15px; background:rgba(0,168,132,0.1); padding:10px; border-radius:8px; display:flex; justify-content:space-between; align-items:center;">
+          <span style="font-size:13px; color:var(--text-primary);">Allow only Admin to chat</span>
+          <button onclick="toggleGroupRestriction('${groupId}')" style="background:${group.restrictMessages ? '#ea0038' : '#00a884'}; color:white; border:none; padding:6px 12px; border-radius:6px; cursor:pointer; font-size:12px; font-weight:bold;">${group.restrictMessages ? 'Restricted (On)' : 'Allowed (Off)'}</button>
+        </div>
+
         <div style="margin-bottom:15px; display:flex; gap:8px;">
           <input type="text" id="add-member-username" placeholder="Username to add..." style="flex:1; padding:6px; border-radius:6px; border:1px solid var(--border-color); background:var(--bg-color); color:var(--text-primary);">
           <button onclick="addGroupMember('${groupId}')" style="background:#00a884; color:white; border:none; padding:6px 12px; border-radius:6px; cursor:pointer; font-weight:bold;">Add</button>
         </div>` : ''}
 
       <div style="font-size:13px; font-weight:bold; color:var(--text-primary); margin-bottom:6px;">Members (${group.members.length}):</div>
-      <div style="max-height:200px; overflow-y:auto;">${membersHtml}</div>
+      <div style="max-height:180px; overflow-y:auto;">${membersHtml}</div>
 
       ${isAdmin ? `
         <button onclick="deleteGroup('${groupId}')" style="width:100%; background:#ea0038; color:white; border:none; padding:10px; border-radius:6px; cursor:pointer; font-weight:bold; margin-top:20px;">🗑️ Delete Group</button>` : ''}
     </div>
   `;
   document.body.appendChild(modal);
+}
+
+async function toggleGroupRestriction(groupId) {
+  const res = await fetch('/api/groups/toggle-restriction', { method: 'POST', headers: headers(), body: JSON.stringify({ groupId }) });
+  const data = await res.json();
+  if (data.message) { openGroupInfoModal(groupId); }
+  else { alert(data.error || "Failed"); }
 }
 
 async function addGroupMember(groupId) {
@@ -852,6 +861,9 @@ function renderGroupMessage(msg) {
   display.innerHTML += `<div class="msg ${type}" id="msg-${msg._id}">${contentHtml}</div>`;
   display.scrollTop = display.scrollHeight;
 }
+// ==========================================
+// PART 6: CHAT RENDERING, MESSAGING & ACTIONS
+// ==========================================
 
 async function sendFriendRequest() {
   const target = document.getElementById('target-username').value;
