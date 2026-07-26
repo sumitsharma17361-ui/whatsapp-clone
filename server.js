@@ -35,7 +35,11 @@ const GroupMessage = mongoose.model('GroupMessage', GroupMessageSchema);
 
 const app = express();
 const server = http.createServer(app);
-const io = socketIo(server, { cors: { origin: "*" } });
+const io = socketIo(server, { 
+  cors: { origin: "*" },
+  pingTimeout: 60000,
+  pingInterval: 25000
+});
 
 const JWT_SECRET = process.env.JWT_SECRET || 'supersecretkey';
 const ONESIGNAL_APP_ID = "45011a3c-d888-453d-a7f3-b7a8e436c09d";
@@ -50,7 +54,7 @@ app.use(express.json({ limit: '100mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 mongoose.connect(process.env.MONGODB_URI)
-  .then(() => console.log('MongoDB Connected (Advanced Groups & Clear Calls Ready)[span_1](start_span)[span_1](end_span)'))
+  .then(() => console.log('MongoDB Connected (Optimized Socket & Fast Delivery Ready)'))
   .catch(err => console.error('DB Connection Error:', err));
 
 async function sendPushNotification(subscriptionId, heading, message) {
@@ -310,7 +314,6 @@ app.get('/api/calls', auth, async (req, res) => {
   } catch (err) { res.status(500).json({ error: 'Failed' }); }
 });
 
-// CLEAR CALL HISTORY API (NEWLY ADDED)
 app.delete('/api/calls/clear', auth, async (req, res) => {
   try {
     await CallLog.deleteMany({ $or: [{ caller: req.user.userId }, { receiver: req.user.userId }] });
@@ -337,6 +340,7 @@ app.delete('/api/messages/clear/:friendId', auth, async (req, res) => {
 });
 
 const onlineUsers = new Map();
+
 io.on('connection', (socket) => {
   let currentUserId = null;
   
@@ -344,16 +348,23 @@ io.on('connection', (socket) => {
     const userId = typeof data === 'object' ? data.userId : data;
     const subscriptionId = typeof data === 'object' ? data.subscriptionId : null;
     if (!userId) return;
+
     currentUserId = userId; 
     onlineUsers.set(userId, socket.id); 
-    socket.join(userId);
-    const updateFields = { isOnline: true };
-    if (subscriptionId) updateFields.onesignalSubscriptionId = subscriptionId;
-    await User.findByIdAndUpdate(userId, updateFields);
-    socket.broadcast.emit('statusChanged', { userId, isOnline: true });
+    socket.join(userId); // Har user apne userId ke room me join ho jata hai
+
+    await User.findByIdAndUpdate(userId, { 
+      isOnline: true, 
+      ...(subscriptionId ? { onesignalSubscriptionId: subscriptionId } : {}) 
+    });
+
+    // Sabhi ko turant broadcast karein ki user online ho gaya hai
+    io.emit('statusChanged', { userId, isOnline: true });
   });
 
-  socket.on('joinGroup', (groupId) => { socket.join(groupId); });
+  socket.on('joinGroup', (groupId) => { 
+    if (groupId) socket.join(groupId); 
+  });
 
   socket.on('sendGroupMessage', async (data) => {
     const { groupId, senderId, text, fileUrl, fileName, fileType } = data;
@@ -372,20 +383,30 @@ io.on('connection', (socket) => {
   });
 
   socket.on('sendMessage', async (data) => {
-    const receiverOnline = onlineUsers.has(data.receiverId);
+    // Check karein ki receiver online hai ya nahi (room me active hai)
+    const receiverSocketId = onlineUsers.get(data.receiverId);
+    const status = receiverSocketId ? 'delivered' : 'sent';
+
     const msg = new Message({ 
-      sender: data.senderId, receiver: data.receiverId, 
-      text: data.text, fileUrl: data.fileUrl, fileName: data.fileName, fileType: data.fileType,
-      status: receiverOnline ? 'delivered' : 'sent', isEncrypted: data.isEncrypted || false
+      sender: data.senderId, 
+      receiver: data.receiverId, 
+      text: data.text, 
+      fileUrl: data.fileUrl, 
+      fileName: data.fileName, 
+      fileType: data.fileType,
+      status: status, 
+      isEncrypted: data.isEncrypted || false
     });
+    
     await msg.save();
     const msgDataToSend = msg.toObject();
     if(data.replyTo) msgDataToSend.replyTo = data.replyTo;
 
+    // Turant dono users ke rooms par emit karein
     io.to(data.receiverId).emit('receiveMessage', msgDataToSend);
     io.to(data.senderId).emit('receiveMessage', msgDataToSend);
 
-    if (!receiverOnline) {
+    if (!receiverSocketId) {
       try {
         const receiverUser = await User.findById(data.receiverId);
         if (receiverUser && receiverUser.onesignalSubscriptionId) {
@@ -410,32 +431,26 @@ io.on('connection', (socket) => {
   socket.on('iceCandidate', ({ candidate, to }) => { io.to(to).emit('iceCandidate', { candidate }); });
   socket.on('endCall', ({ to }) => { io.to(to).emit('callEnded'); });
   socket.on('typing', ({ receiverId, isTyping }) => { io.to(receiverId).emit('typingEmit', { senderId: currentUserId, isTyping }); });
+  
   socket.on('reactionEmit', async ({ msgId, emoji, receiverId }) => {
     await Message.findByIdAndUpdate(msgId, { reaction: emoji });
     io.to(receiverId).emit('reactionReceived', { msgId, emoji });
     io.to(currentUserId).emit('reactionReceived', { msgId, emoji });
   });
+
   socket.on('deleteMsgEmit', async ({ msgId, receiverId }) => {
     await Message.findByIdAndUpdate(msgId, { text: '🚫 This message was deleted', fileUrl: null, fileName: null, fileType: null, isEncrypted: false });
     io.to(receiverId).emit('msgDeleted', { msgId });
     io.to(currentUserId).emit('msgDeleted', { msgId });
   });
-  socket.on('clearChatEmit', ({ receiverId }) => { io.to(receiverId).emit('chatClearedEvent'); });
-  socket.on('readEmit', async ({ msgId, senderId }) => {
-     await Message.findByIdAndUpdate(msgId, { status: 'read' });
-     io.to(senderId).emit('msgStatusUpdate', { msgId, status: 'read' });
-  });
 
-  socket.on('disconnect', async () => {
-    if (currentUserId) {
-      onlineUsers.delete(currentUserId);
-      const now = new Date();
-      await User.findByIdAndUpdate(currentUserId, { isOnline: false, lastSeen: now });
-      io.emit('statusChanged', { userId: currentUserId, isOnline: false, lastSeen: now });
+  socket.on('clearChatEmit', ({ receiverId }) => { io.to(receiverId).emit('chatClearedEvent'); }
+    );
+        io.emit('statusChanged', { userId: currentUserId, isOnline: false, lastSeen: now });
+      }
     }
   });
 });
 
 const PORT = process.env.PORT || `3000`;
 server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
-    
