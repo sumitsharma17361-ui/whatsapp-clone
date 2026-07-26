@@ -594,7 +594,7 @@ function toggleVideo() {
   }
 }
 // ==========================================
-// PART 3: LOADERS, STATUS VIEWERS & DASHBOARD
+// PART 3: LOADERS & DASHBOARD
 // ==========================================
 
 function encryptText(text, key) { return btoa(encodeURIComponent(text)); }
@@ -730,6 +730,9 @@ async function loadCallLogs() {
       </div>`;
   });
 }
+// ==========================================
+// PART 4: STATUS CREATOR & VIEWERS MODAL
+// ==========================================
 
 async function openStatusCreator() {
   const text = prompt("Enter status text message:");
@@ -793,19 +796,20 @@ function viewStatus(st) {
   let viewersHtml = '';
   if (isMyStatus && st.viewers && st.viewers.length > 0) {
     let viewerListItems = st.viewers.map(v => `<div style="display:flex; align-items:center; gap:8px; margin:4px 0;"><img src="${v.profilePic || 'https://www.w3schools.com/howto/img_avatar.png'}" style="width:24px;height:24px;border-radius:50%;"><span>${v.username}</span></div>`).join('');
-    viewersHtml = `<div style="position:absolute; bottom:20px; background:rgba(0,0,0,0.8); padding:10px 15px; border-radius:8px; color:white; max-height:150px; overflow-y:auto; width:80%;"><b>Viewed by (${st.viewers.length}):</b>${viewerListItems}</div>`;
+    // Yahan styling theek kar di gayi hai taaki yeh image ke niche properly center me aaye aur mobile/desktop dono par dikhe
+    viewersHtml = `<div style="margin-top: 15px; background: rgba(0,0,0,0.7); border: 1px solid rgba(255,255,255,0.2); padding: 10px 15px; border-radius: 8px; color: white; max-height: 120px; overflow-y: auto; width: 100%; max-width: 400px; text-align: left;"><b>Viewed by (${st.viewers.length}):</b>${viewerListItems}</div>`;
   }
 
   const modal = document.createElement('div');
   modal.className = 'status-story-modal';
-  modal.style.cssText = "position:fixed; top:0; left:0; width:100vw; height:100vh; background:#000; z-index:4000; display:flex; flex-direction:column; align-items:center; justify-content:center;";
+  modal.style.cssText = "position:fixed; top:0; left:0; width:100vw; height:100vh; background:#000; z-index:4000; display:flex; flex-direction:column; align-items:center; justify-content:center; padding: 20px; box-sizing: border-box;";
   
   let mediaHtml = '';
   if (st.mediaUrl) {
     if (st.mediaType === 'video') {
-      mediaHtml = `<video src="${st.mediaUrl}" controls autoplay style="max-width:100%; max-height:65vh; object-fit:contain; background:#000;"></video>`;
+      mediaHtml = `<video src="${st.mediaUrl}" controls autoplay style="max-width:100%; max-height:55vh; object-fit:contain; background:#000;"></video>`;
     } else {
-      mediaHtml = `<img src="${st.mediaUrl}" style="max-width:100%; max-height:65vh; object-fit:contain; background:#000;">`;
+      mediaHtml = `<img src="${st.mediaUrl}" style="max-width:100%; max-height:55vh; object-fit:contain; background:#000;">`;
     }
   }
 
@@ -821,7 +825,7 @@ function viewStatus(st) {
     </div>
     ${isMyStatus ? `<button onclick="deleteStatus('${st._id}')" style="position:absolute; top:30px; right:70px; background:#ea0038; color:white; border:none; padding:8px 14px; border-radius:6px; cursor:pointer; font-weight:bold; z-index:10; font-size:13px;">🗑️ Delete</button>` : ''}
     <span onclick="this.parentElement.remove()" style="position:absolute; top:20px; right:25px; font-size:36px; cursor:pointer; z-index:10; color:white;">&times;</span>
-    <div style="background:${st.bgColor || '#111b21'}; width:100%; height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; position:relative; padding:20px;">
+    <div style="background:${st.bgColor || '#111b21'}; width:100%; height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; position:relative; padding:20px; box-sizing: border-box; overflow-y: auto;">
       ${mediaHtml}
       ${textHtml}
       ${viewersHtml}
@@ -843,7 +847,7 @@ async function deleteStatus(statusId) {
   }
 }
 // ==========================================
-// PART 4: GROUPS, CHAT RENDERING & INSTANT SEND
+// PART 5: GROUPS, CHAT RENDERING & MESSAGING
 // ==========================================
 
 async function createNewGroup() {
