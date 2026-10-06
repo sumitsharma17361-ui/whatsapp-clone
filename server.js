@@ -1,6 +1,13 @@
 // ============================================================
 // BM GROUP CHAT PORTAL — FULL BACKEND (Single File)
+// Production Ready for Render + MongoDB Atlas
 // ============================================================
+
+// ============================================================
+// 🔥 DOTENV — MUST BE FIRST LINE (before any process.env usage)
+// ============================================================
+require('dotenv').config();
+
 const express = require('express');
 const http = require('http');
 const path = require('path');
@@ -12,17 +19,39 @@ const cors = require('cors');
 const { Server } = require('socket.io');
 
 // ============================================================
-// CONFIG
+// CONFIG — from environment variables
 // ============================================================
 const PORT = process.env.PORT || 3000;
-const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/bm-chat';
-const JWT_SECRET = process.env.JWT_SECRET || 'bm_chat_super_secret_key_2026';
+const MONGO_URI = process.env.MONGO_URI;
+const JWT_SECRET = process.env.JWT_SECRET || 'bm_chat_fallback_secret_2026';
 
-const UPLOAD_DIR = path.join(__dirname, 'uploads');
-if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+// 🔍 Debug logs (start me dikhega)
+console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+console.log('🔧 ENVIRONMENT CHECK');
+console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+console.log('PORT:', PORT);
+console.log('MONGO_URI:', MONGO_URI ? '✅ SET (' + MONGO_URI.substring(0, 40) + '...)' : '❌ NOT SET');
+console.log('JWT_SECRET:', JWT_SECRET ? '✅ SET (' + JWT_SECRET.substring(0, 15) + '...)' : '❌ NOT SET');
+console.log('NODE_ENV:', process.env.NODE_ENV || 'development');
+console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+
+if (!MONGO_URI) {
+  console.error('❌ FATAL: MONGO_URI is not set in environment variables!');
+  console.error('👉 Render Dashboard → Environment → Add MONGO_URI');
+  process.exit(1);
+}
 
 // ============================================================
-// EXPRESS + SOCKET.IO
+// UPLOADS DIRECTORY
+// ============================================================
+const UPLOAD_DIR = path.join(__dirname, 'uploads');
+if (!fs.existsSync(UPLOAD_DIR)) {
+  fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+  console.log('📁 Created uploads directory:', UPLOAD_DIR);
+}
+
+// ============================================================
+// EXPRESS + SOCKET.IO SETUP
 // ============================================================
 const app = express();
 const server = http.createServer(app);
@@ -40,17 +69,26 @@ app.use('/uploads', express.static(UPLOAD_DIR));
 // ============================================================
 // MONGODB CONNECT
 // ============================================================
+console.log('🔌 Connecting to MongoDB...');
 mongoose.connect(MONGO_URI, {
-  serverSelectionTimeoutMS: 10000
+  serverSelectionTimeoutMS: 30000,
+  socketTimeoutMS: 45000
 })
-.then(() => console.log('✅ MongoDB connected'))
+.then(() => {
+  console.log('✅ ✅ ✅ MongoDB CONNECTED SUCCESSFULLY ✅ ✅ ✅');
+})
 .catch(err => {
-  console.error('❌ MongoDB error:', err.message);
+  console.error('❌ MongoDB connection FAILED:', err.message);
+  console.error('👉 Check: MONGO_URI, IP whitelist (0.0.0.0/0), username/password');
   process.exit(1);
 });
 
+mongoose.connection.on('connected', () => console.log('🟢 Mongoose connected'));
+mongoose.connection.on('error', (err) => console.error('🔴 Mongoose error:', err.message));
+mongoose.connection.on('disconnected', () => console.warn('🟡 Mongoose disconnected'));
+
 // ============================================================
-// MODELS (all combined)
+// SCHEMAS & MODELS
 // ============================================================
 const userSchema = new mongoose.Schema({
   name: { type: String, required: true },
@@ -104,7 +142,7 @@ const statusSchema = new mongoose.Schema({
   text: { type: String, default: '' },
   bgColor: { type: String, default: '#2563eb' },
   viewers: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
-  createdAt: { type: Date, default: Date.now, expires: 86400 } // 24h TTL
+  createdAt: { type: Date, default: Date.now, expires: 86400 }
 }, { timestamps: true });
 
 const callLogSchema = new mongoose.Schema({
@@ -138,17 +176,26 @@ function authMiddleware(req, res, next) {
 }
 
 // ============================================================
+// HEALTH CHECK
+// ============================================================
+app.get('/health', (req, res) => {
+  res.json({
+    status: 'ok',
+    time: new Date().toISOString(),
+    mongodb: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
+    uptime: process.uptime()
+  });
+});
+
+// ============================================================
 // AUTH ROUTES
 // ============================================================
-
-// Register
 app.post('/api/register', async (req, res) => {
   try {
     const { rollNo, password, name, role, branch } = req.body;
     if (!rollNo || !password || !name) {
       return res.status(400).json({ error: 'Roll No, Name and Password required' });
     }
-
     const cleanRoll = rollNo.trim().toUpperCase();
     const existing = await User.findOne({ rollNo: cleanRoll });
     if (existing) return res.status(400).json({ error: 'Roll No already registered' });
@@ -162,6 +209,7 @@ app.post('/api/register', async (req, res) => {
       branch: branch || 'CSE'
     });
 
+    console.log(`✅ New user registered: ${cleanRoll} (${user.name})`);
     res.json({ message: 'Registered successfully', userId: user._id });
   } catch (err) {
     console.error('Register error:', err);
@@ -169,7 +217,6 @@ app.post('/api/register', async (req, res) => {
   }
 });
 
-// Login
 app.post('/api/login', async (req, res) => {
   try {
     const { rollNo, password } = req.body;
@@ -188,6 +235,7 @@ app.post('/api/login', async (req, res) => {
     user.lastSeen = new Date();
     await user.save();
 
+    console.log(`🔐 Login: ${cleanRoll}`);
     res.json({
       token,
       userId: user._id,
@@ -203,12 +251,11 @@ app.post('/api/login', async (req, res) => {
   }
 });
 
-// Change Password
 app.post('/api/change-password', authMiddleware, async (req, res) => {
   try {
     const { oldPassword, newPassword } = req.body;
     if (!oldPassword || !newPassword) return res.status(400).json({ error: 'Both passwords required' });
-    if (newPassword.length < 6) return res.status(400).json({ error: 'New password too short' });
+    if (newPassword.length < 6) return res.status(400).json({ error: 'New password too short (min 6)' });
 
     const user = await User.findById(req.userId);
     if (!user) return res.status(404).json({ error: 'User not found' });
@@ -224,7 +271,6 @@ app.post('/api/change-password', authMiddleware, async (req, res) => {
   }
 });
 
-// Upload Profile Pic
 app.post('/api/profile-pic', authMiddleware, async (req, res) => {
   try {
     const { profilePic } = req.body;
@@ -245,8 +291,7 @@ app.get('/api/dashboard', authMiddleware, async (req, res) => {
       .populate('friends', 'name rollNo profilePic isOnline lastSeen role branch')
       .populate('friendRequests', 'name rollNo profilePic role branch');
 
-    const groups = await Group.find({ members: req.userId })
-      .select('name admin members');
+    const groups = await Group.find({ members: req.userId }).select('name admin members');
 
     res.json({
       friends: user.friends || [],
@@ -272,18 +317,12 @@ app.post('/api/friend-request', authMiddleware, async (req, res) => {
     if (String(target._id) === String(req.userId)) return res.status(400).json({ error: 'Cannot add yourself' });
 
     const me = await User.findById(req.userId);
-
-    if (me.friends.includes(target._id)) {
-      return res.status(400).json({ error: 'Already friends' });
-    }
-    if (target.friendRequests.includes(req.userId)) {
-      return res.status(400).json({ error: 'Request already sent' });
-    }
+    if (me.friends.includes(target._id)) return res.status(400).json({ error: 'Already friends' });
+    if (target.friendRequests.includes(req.userId)) return res.status(400).json({ error: 'Request already sent' });
 
     target.friendRequests.push(req.userId);
     await target.save();
 
-    // Notify target via socket
     const targetSocketId = userSockets.get(String(target._id));
     if (targetSocketId) io.to(targetSocketId).emit('incomingFriendRequest');
 
@@ -302,17 +341,14 @@ app.post('/api/accept-request', authMiddleware, async (req, res) => {
     const requester = await User.findById(requesterId);
     if (!requester) return res.status(404).json({ error: 'Requester not found' });
 
-    // Add each other to friends
     if (!me.friends.includes(requester._id)) me.friends.push(requester._id);
     if (!requester.friends.includes(me._id)) requester.friends.push(me._id);
 
-    // Remove request
     me.friendRequests = me.friendRequests.filter(id => String(id) !== String(requesterId));
 
     await me.save();
     await requester.save();
 
-    // Notify both
     const requesterSocketId = userSockets.get(String(requester._id));
     if (requesterSocketId) io.to(requesterSocketId).emit('groupUpdated');
 
@@ -381,14 +417,13 @@ app.delete('/api/messages/clear/:friendId', authMiddleware, async (req, res) => 
 });
 
 // ============================================================
-// FILE UPLOAD (base64 → file on disk)
+// FILE UPLOAD
 // ============================================================
 app.post('/api/upload', authMiddleware, async (req, res) => {
   try {
     const { fileName, fileData } = req.body;
     if (!fileName || !fileData) return res.status(400).json({ error: 'fileName and fileData required' });
 
-    // fileData: "data:image/png;base64,XXXXXX"
     const matches = fileData.match(/^data:(.+?);base64,(.+)$/);
     if (!matches) return res.status(400).json({ error: 'Invalid file format' });
 
@@ -443,7 +478,6 @@ app.post('/api/status', authMiddleware, async (req, res) => {
       bgColor: bgColor || '#2563eb'
     });
 
-    // Notify all friends
     const me = await User.findById(req.userId);
     me.friends.forEach(fid => {
       const sid = userSockets.get(String(fid));
@@ -525,7 +559,6 @@ app.post('/api/groups/create', authMiddleware, async (req, res) => {
       members
     });
 
-    // Notify all members
     members.forEach(mid => {
       const sid = userSockets.get(String(mid));
       if (sid) io.to(sid).emit('groupUpdated');
@@ -631,7 +664,7 @@ app.delete('/api/groups/:groupId', authMiddleware, async (req, res) => {
 // ============================================================
 // SOCKET.IO — REALTIME
 // ============================================================
-const userSockets = new Map(); // userId → socketId
+const userSockets = new Map();
 
 io.on('connection', (socket) => {
   console.log('🔌 Socket connected:', socket.id);
@@ -646,7 +679,6 @@ io.on('connection', (socket) => {
       if (subscriptionId) update.onesignalId = subscriptionId;
       await User.findByIdAndUpdate(userId, update);
 
-      // Notify friends
       const user = await User.findById(userId).populate('friends', '_id');
       (user.friends || []).forEach(f => {
         const sid = userSockets.get(String(f._id));
@@ -655,7 +687,6 @@ io.on('connection', (socket) => {
     } catch (e) { console.warn('identify error:', e.message); }
   });
 
-  // ========== 1-on-1 Message ==========
   socket.on('sendMessage', async (data) => {
     try {
       const { senderId, receiverId, text, fileUrl, fileName, fileType, timestamp, isEncrypted, replyTo } = data;
@@ -690,7 +721,6 @@ io.on('connection', (socket) => {
     }
   });
 
-  // ========== Group Message ==========
   socket.on('sendGroupMessage', async (data) => {
     try {
       const { groupId, senderId, text, fileUrl, fileName, fileType } = data;
@@ -707,7 +737,6 @@ io.on('connection', (socket) => {
       const populated = await GroupMessage.findById(msg._id)
         .populate('sender', 'name rollNo profilePic');
 
-      // Broadcast to all group members
       const group = await Group.findById(groupId).select('members');
       if (group) {
         group.members.forEach(mid => {
@@ -724,13 +753,11 @@ io.on('connection', (socket) => {
     if (groupId) socket.join(`group_${groupId}`);
   });
 
-  // ========== Typing ==========
   socket.on('typing', ({ receiverId, isTyping }) => {
     const sid = userSockets.get(String(receiverId));
     if (sid) io.to(sid).emit('typingEmit', { senderId: socket.userId, isTyping });
   });
 
-  // ========== Reaction ==========
   socket.on('reactionEmit', async ({ msgId, emoji, receiverId }) => {
     try {
       await Message.findByIdAndUpdate(msgId, { reaction: emoji });
@@ -739,7 +766,6 @@ io.on('connection', (socket) => {
     } catch (e) {}
   });
 
-  // ========== Delete Message ==========
   socket.on('deleteMsgEmit', async ({ msgId, receiverId }) => {
     try {
       await Message.findByIdAndDelete(msgId);
@@ -749,13 +775,11 @@ io.on('connection', (socket) => {
     } catch (e) {}
   });
 
-  // ========== Clear Chat ==========
   socket.on('clearChatEmit', ({ receiverId }) => {
     const sid = userSockets.get(String(receiverId));
     if (sid) io.to(sid).emit('chatClearedEvent');
   });
 
-  // ========== Read Receipt ==========
   socket.on('readEmit', async ({ msgId, senderId }) => {
     try {
       await Message.findByIdAndUpdate(msgId, { status: 'read' });
@@ -764,7 +788,6 @@ io.on('connection', (socket) => {
     } catch (e) {}
   });
 
-  // ========== Disconnect ==========
   socket.on('disconnect', async () => {
     console.log('❌ Socket disconnected:', socket.id);
     if (socket.userId) {
@@ -782,19 +805,29 @@ io.on('connection', (socket) => {
 });
 
 // ============================================================
-// HEALTH + FALLBACK
+// FALLBACK — serve index.html for all other routes
 // ============================================================
-app.get('/health', (req, res) => res.json({ status: 'ok', time: new Date() }));
-
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
 // ============================================================
+// ERROR HANDLERS
+// ============================================================
+process.on('unhandledRejection', (reason) => {
+  console.error('⚠️ Unhandled Rejection:', reason);
+});
+process.on('uncaughtException', (err) => {
+  console.error('⚠️ Uncaught Exception:', err.message);
+});
+
+// ============================================================
 // START SERVER
 // ============================================================
-server.listen(PORT, () => {
-  console.log(`🚀 BM Chat server running on http://localhost:${PORT}`);
+server.listen(PORT, '0.0.0.0', () => {
+  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  console.log(`🚀 BM Chat server running on port ${PORT}`);
   console.log(`📁 Uploads: ${UPLOAD_DIR}`);
-  console.log(`🔐 JWT: ${JWT_SECRET.slice(0, 12)}...`);
+  console.log(`🔐 JWT: ${JWT_SECRET.substring(0, 15)}...`);
+  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 });
