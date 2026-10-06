@@ -1,468 +1,800 @@
-require('dotenv').config();
+// ============================================================
+// BM GROUP CHAT PORTAL — FULL BACKEND (Single File)
+// ============================================================
 const express = require('express');
 const http = require('http');
-const mongoose = require('mongoose');
-const socketIo = require('socket.io');
-const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
 const path = require('path');
 const fs = require('fs');
+const mongoose = require('mongoose');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+const cors = require('cors');
+const { Server } = require('socket.io');
 
-const User = require('./models/User');
-const Message = require('./models/Message');
-const Status = require('./models/Status');
-const CallLog = require('./models/CallLog');
+// ============================================================
+// CONFIG
+// ============================================================
+const PORT = process.env.PORT || 3000;
+const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/bm-chat';
+const JWT_SECRET = process.env.JWT_SECRET || 'bm_chat_super_secret_key_2026';
 
-const GroupSchema = new mongoose.Schema({
+const UPLOAD_DIR = path.join(__dirname, 'uploads');
+if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+
+// ============================================================
+// EXPRESS + SOCKET.IO
+// ============================================================
+const app = express();
+const server = http.createServer(app);
+const io = new Server(server, {
+  cors: { origin: '*', methods: ['GET', 'POST'] },
+  maxHttpBufferSize: 50 * 1024 * 1024 // 50MB
+});
+
+app.use(cors());
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+app.use(express.static(path.join(__dirname, 'public')));
+app.use('/uploads', express.static(UPLOAD_DIR));
+
+// ============================================================
+// MONGODB CONNECT
+// ============================================================
+mongoose.connect(MONGO_URI, {
+  serverSelectionTimeoutMS: 10000
+})
+.then(() => console.log('✅ MongoDB connected'))
+.catch(err => {
+  console.error('❌ MongoDB error:', err.message);
+  process.exit(1);
+});
+
+// ============================================================
+// MODELS (all combined)
+// ============================================================
+const userSchema = new mongoose.Schema({
+  name: { type: String, required: true },
+  rollNo: { type: String, required: true, unique: true, uppercase: true, trim: true },
+  password: { type: String, required: true },
+  role: { type: String, enum: ['student', 'faculty', 'admin'], default: 'student' },
+  branch: { type: String, default: 'CSE' },
+  profilePic: { type: String, default: '' },
+  isOnline: { type: Boolean, default: false },
+  lastSeen: { type: Date, default: Date.now },
+  friends: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+  friendRequests: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+  onesignalId: { type: String, default: null }
+}, { timestamps: true });
+
+const messageSchema = new mongoose.Schema({
+  sender: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  receiver: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  text: { type: String, default: '' },
+  fileUrl: { type: String, default: null },
+  fileName: { type: String, default: null },
+  fileType: { type: String, default: null },
+  status: { type: String, enum: ['sent', 'delivered', 'read'], default: 'sent' },
+  reaction: { type: String, default: '' },
+  replyTo: { type: String, default: null },
+  isEncrypted: { type: Boolean, default: false },
+  timestamp: { type: Date, default: Date.now }
+}, { timestamps: true });
+
+const groupSchema = new mongoose.Schema({
   name: { type: String, required: true },
   admin: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   members: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
-  restrictMessages: { type: Boolean, default: false },
   createdAt: { type: Date, default: Date.now }
-});
-const Group = mongoose.model('Group', GroupSchema);
+}, { timestamps: true });
 
-const GroupMessageSchema = new mongoose.Schema({
+const groupMessageSchema = new mongoose.Schema({
   group: { type: mongoose.Schema.Types.ObjectId, ref: 'Group', required: true },
   sender: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-  text: { type: String },
-  fileUrl: { type: String },
-  fileName: { type: String },
-  fileType: { type: String },
-  timestamp: { type: Number, default: Date.now }
-});
-const GroupMessage = mongoose.model('GroupMessage', GroupMessageSchema);
+  text: { type: String, default: '' },
+  fileUrl: { type: String, default: null },
+  fileName: { type: String, default: null },
+  fileType: { type: String, default: null },
+  timestamp: { type: Date, default: Date.now }
+}, { timestamps: true });
 
-const app = express();
-const server = http.createServer(app);
-const io = socketIo(server, { 
-  cors: { origin: "*" },
-  pingTimeout: 60000,
-  pingInterval: 25000
-});
+const statusSchema = new mongoose.Schema({
+  user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  mediaUrl: { type: String, default: '' },
+  mediaType: { type: String, enum: ['text', 'image', 'video'], default: 'text' },
+  text: { type: String, default: '' },
+  bgColor: { type: String, default: '#2563eb' },
+  viewers: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+  createdAt: { type: Date, default: Date.now, expires: 86400 } // 24h TTL
+}, { timestamps: true });
 
-const JWT_SECRET = process.env.JWT_SECRET || 'supersecretkey';
-const ONESIGNAL_APP_ID = "45011a3c-d888-453d-a7f3-b7a8e436c09d";
-const ONESIGNAL_REST_API_KEY = "Os_v2_app_iuarupgyrbct3j7tw6uoinwatwi6dfkac74udm4fmcr2hewe6qzyxy2ueiaufcte77kptuzp4oghr75rfsth2hjprbwbtdrzwlpmpta";
+const callLogSchema = new mongoose.Schema({
+  caller: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  receiver: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  callType: { type: String, enum: ['audio', 'video'], default: 'audio' },
+  direction: { type: String, enum: ['incoming', 'outgoing', 'missed'], default: 'outgoing' },
+  timestamp: { type: Date, default: Date.now }
+}, { timestamps: true });
 
-const UPLOADS_DIR = path.join(__dirname, 'public', 'uploads');
-if (!fs.existsSync(UPLOADS_DIR)){
-    fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+const User = mongoose.model('User', userSchema);
+const Message = mongoose.model('Message', messageSchema);
+const Group = mongoose.model('Group', groupSchema);
+const GroupMessage = mongoose.model('GroupMessage', groupMessageSchema);
+const Status = mongoose.model('Status', statusSchema);
+const CallLog = mongoose.model('CallLog', callLogSchema);
+
+// ============================================================
+// AUTH MIDDLEWARE
+// ============================================================
+function authMiddleware(req, res, next) {
+  const token = req.headers.authorization;
+  if (!token) return res.status(401).json({ error: 'No token provided' });
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    req.userId = decoded.userId;
+    next();
+  } catch (err) {
+    return res.status(401).json({ error: 'Invalid token' });
+  }
 }
 
-app.use(express.json({ limit: '100mb' }));
-app.use(express.static(path.join(__dirname, 'public')));
+// ============================================================
+// AUTH ROUTES
+// ============================================================
 
-mongoose.connect(process.env.MONGODB_URI)
-  .then(() => console.log('MongoDB Connected (Optimized Socket & Fast Delivery Ready)'))
-  .catch(err => console.error('DB Connection Error:', err));
-
-async function sendPushNotification(subscriptionId, heading, message) {
-  try {
-    if (!subscriptionId) return;
-    const headers = { "Content-Type": "application/json; charset=utf-8", "Authorization": `Basic ${ONESIGNAL_REST_API_KEY}` };
-    const body = { app_id: ONESIGNAL_APP_ID, include_player_ids: [subscriptionId], headings: { "en": heading }, contents: { "en": message } };
-    await fetch("https://onesignal.com/api/v1/notifications", { method: "POST", headers: headers, body: JSON.stringify(body) });
-  } catch (err) { console.error("Push Error:", err); }
-}
-
-app.post('/api/upload', async (req, res) => {
-  try {
-    const { fileName, fileData } = req.body;
-    if (!fileName || !fileData) return res.status(400).json({ error: 'No file data' });
-    const buffer = Buffer.from(fileData.split(',')[1], 'base64');
-    const uniqueFileName = Date.now() + '-' + fileName;
-    fs.writeFileSync(path.join(UPLOADS_DIR, uniqueFileName), buffer);
-    res.json({ fileUrl: `/uploads/${uniqueFileName}` });
-  } catch (err) { res.status(500).json({ error: 'Upload failed' }); }
-});
-
-app.post('/api/profile-pic', async (req, res) => {
-  try {
-    const decoded = jwt.verify(req.headers['authorization'], JWT_SECRET);
-    await User.findByIdAndUpdate(decoded.userId, { profilePic: req.body.profilePic });
-    res.json({ message: "Profile updated" });
-  } catch (err) { res.status(500).json({ error: "Failed" }); }
-});
-
+// Register
 app.post('/api/register', async (req, res) => {
   try {
-    const { username, password } = req.body;
-    const hashedPassword = await bcrypt.hash(password, 10);
-    const user = new User({ username, password: hashedPassword });
-    await user.save();
-    res.status(201).json({ message: 'Registered successfully' });
-  } catch (err) { res.status(400).json({ error: 'Username already exists' }); }
-});
+    const { rollNo, password, name, role, branch } = req.body;
+    if (!rollNo || !password || !name) {
+      return res.status(400).json({ error: 'Roll No, Name and Password required' });
+    }
 
-app.post('/api/login', async (req, res) => {
-  const { username, password } = req.body;
-  const user = await User.findOne({ username });
-  if (!user || !(await bcrypt.compare(password, user.password))) {
-    return res.status(400).json({ error: 'Invalid credentials' });
+    const cleanRoll = rollNo.trim().toUpperCase();
+    const existing = await User.findOne({ rollNo: cleanRoll });
+    if (existing) return res.status(400).json({ error: 'Roll No already registered' });
+
+    const hashed = await bcrypt.hash(password, 10);
+    const user = await User.create({
+      name: name.trim(),
+      rollNo: cleanRoll,
+      password: hashed,
+      role: role || 'student',
+      branch: branch || 'CSE'
+    });
+
+    res.json({ message: 'Registered successfully', userId: user._id });
+  } catch (err) {
+    console.error('Register error:', err);
+    res.status(500).json({ error: err.message });
   }
-  const token = jwt.sign({ userId: user._id, username: user.username }, JWT_SECRET);
-  res.json({ token, userId: user._id, username: user.username, profilePic: user.profilePic });
 });
 
-const auth = (req, res, next) => {
-  const token = req.headers['authorization'];
-  if (!token) return res.status(401).json({ error: 'No token' });
-  jwt.verify(token, JWT_SECRET, (err, decoded) => {
-    if (err) return res.status(401).json({ error: 'Invalid' });
-    req.user = decoded;
-    next();
-  });
-};
+// Login
+app.post('/api/login', async (req, res) => {
+  try {
+    const { rollNo, password } = req.body;
+    if (!rollNo || !password) return res.status(400).json({ error: 'Roll No and Password required' });
 
-app.post('/api/change-password', auth, async (req, res) => {
+    const cleanRoll = rollNo.trim().toUpperCase();
+    const user = await User.findOne({ rollNo: cleanRoll });
+    if (!user) return res.status(400).json({ error: 'Roll No not registered' });
+
+    const ok = await bcrypt.compare(password, user.password);
+    if (!ok) return res.status(400).json({ error: 'Invalid password' });
+
+    const token = jwt.sign({ userId: user._id }, JWT_SECRET, { expiresIn: '30d' });
+
+    user.isOnline = true;
+    user.lastSeen = new Date();
+    await user.save();
+
+    res.json({
+      token,
+      userId: user._id,
+      rollNo: user.rollNo,
+      name: user.name,
+      role: user.role,
+      branch: user.branch,
+      profilePic: user.profilePic
+    });
+  } catch (err) {
+    console.error('Login error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Change Password
+app.post('/api/change-password', authMiddleware, async (req, res) => {
   try {
     const { oldPassword, newPassword } = req.body;
-    const user = await User.findById(req.user.userId);
-    if (!user || !(await bcrypt.compare(oldPassword, user.password))) {
-      return res.status(400).json({ error: 'Incorrect old password' });
-    }
+    if (!oldPassword || !newPassword) return res.status(400).json({ error: 'Both passwords required' });
+    if (newPassword.length < 6) return res.status(400).json({ error: 'New password too short' });
+
+    const user = await User.findById(req.userId);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    const ok = await bcrypt.compare(oldPassword, user.password);
+    if (!ok) return res.status(400).json({ error: 'Current password incorrect' });
+
     user.password = await bcrypt.hash(newPassword, 10);
     await user.save();
-    res.json({ message: 'Password changed successfully!' });
-  } catch (err) { res.status(500).json({ error: 'Server error' }); }
-});
-
-app.post('/api/friend-request', auth, async (req, res) => {
-  const targetUser = await User.findOne({ username: req.body.targetUsername });
-  if (!targetUser) return res.status(404).json({ error: 'User not found' });
-  if (targetUser.friendRequests.includes(req.user.userId) || targetUser.friends.includes(req.user.userId)) {
-    return res.status(400).json({ error: 'Already sent or friends' });
+    res.json({ message: 'Password changed successfully' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
-  targetUser.friendRequests.push(req.user.userId);
-  await targetUser.save();
-  io.to(targetUser._id.toString()).emit('incomingFriendRequest');
-  res.json({ message: 'Request sent' });
 });
 
-app.delete('/api/friend/:friendId', auth, async (req, res) => {
+// Upload Profile Pic
+app.post('/api/profile-pic', authMiddleware, async (req, res) => {
   try {
-    const userId = req.user.userId;
-    const friendId = req.params.friendId;
-    await User.findByIdAndUpdate(userId, { $pull: { friends: friendId } });
-    await User.findByIdAndUpdate(friendId, { $pull: { friends: userId } });
-    res.json({ message: 'Friend removed successfully' });
-  } catch (err) { res.status(500).json({ error: 'Failed to remove friend' }); }
+    const { profilePic } = req.body;
+    if (!profilePic) return res.status(400).json({ error: 'No image provided' });
+    await User.findByIdAndUpdate(req.userId, { profilePic });
+    res.json({ message: 'Profile pic updated' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
-app.get('/api/dashboard', auth, async (req, res) => {
-  const user = await User.findById(req.user.userId)
-    .populate('friends', 'username isOnline profilePic lastSeen')
-    .populate('friendRequests', 'username');
-  const groups = await Group.find({ members: req.user.userId }).populate('members', 'username profilePic');
-  res.json({ friends: user.friends, friendRequests: user.friendRequests, groups });
+// ============================================================
+// DASHBOARD
+// ============================================================
+app.get('/api/dashboard', authMiddleware, async (req, res) => {
+  try {
+    const user = await User.findById(req.userId)
+      .populate('friends', 'name rollNo profilePic isOnline lastSeen role branch')
+      .populate('friendRequests', 'name rollNo profilePic role branch');
+
+    const groups = await Group.find({ members: req.userId })
+      .select('name admin members');
+
+    res.json({
+      friends: user.friends || [],
+      friendRequests: user.friendRequests || [],
+      groups: groups || []
+    });
+  } catch (err) {
+    console.error('Dashboard error:', err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
-app.post('/api/accept-request', auth, async (req, res) => {
-  const { requesterId } = req.body;
-  const user = await User.findById(req.user.userId);
-  const requester = await User.findById(requesterId);
-  user.friendRequests = user.friendRequests.filter(id => id.toString() !== requesterId);
-  user.friends.push(requesterId);
-  requester.friends.push(user._id);
-  await user.save(); await requester.save();
-  io.to(requesterId).emit('requestAccepted');
-  res.json({ message: 'Accepted' });
+// ============================================================
+// FRIENDS
+// ============================================================
+app.post('/api/friend-request', authMiddleware, async (req, res) => {
+  try {
+    const { targetRollNo } = req.body;
+    if (!targetRollNo) return res.status(400).json({ error: 'Roll No required' });
+
+    const target = await User.findOne({ rollNo: targetRollNo.trim().toUpperCase() });
+    if (!target) return res.status(404).json({ error: 'User not found' });
+    if (String(target._id) === String(req.userId)) return res.status(400).json({ error: 'Cannot add yourself' });
+
+    const me = await User.findById(req.userId);
+
+    if (me.friends.includes(target._id)) {
+      return res.status(400).json({ error: 'Already friends' });
+    }
+    if (target.friendRequests.includes(req.userId)) {
+      return res.status(400).json({ error: 'Request already sent' });
+    }
+
+    target.friendRequests.push(req.userId);
+    await target.save();
+
+    // Notify target via socket
+    const targetSocketId = userSockets.get(String(target._id));
+    if (targetSocketId) io.to(targetSocketId).emit('incomingFriendRequest');
+
+    res.json({ message: `Friend request sent to ${target.name}` });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
-app.post('/api/groups/create', auth, async (req, res) => {
+app.post('/api/accept-request', authMiddleware, async (req, res) => {
+  try {
+    const { requesterId } = req.body;
+    if (!requesterId) return res.status(400).json({ error: 'Requester ID required' });
+
+    const me = await User.findById(req.userId);
+    const requester = await User.findById(requesterId);
+    if (!requester) return res.status(404).json({ error: 'Requester not found' });
+
+    // Add each other to friends
+    if (!me.friends.includes(requester._id)) me.friends.push(requester._id);
+    if (!requester.friends.includes(me._id)) requester.friends.push(me._id);
+
+    // Remove request
+    me.friendRequests = me.friendRequests.filter(id => String(id) !== String(requesterId));
+
+    await me.save();
+    await requester.save();
+
+    // Notify both
+    const requesterSocketId = userSockets.get(String(requester._id));
+    if (requesterSocketId) io.to(requesterSocketId).emit('groupUpdated');
+
+    res.json({ message: 'Friend request accepted' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/friend/:friendId', authMiddleware, async (req, res) => {
+  try {
+    const { friendId } = req.params;
+    const me = await User.findById(req.userId);
+    const friend = await User.findById(friendId);
+
+    me.friends = me.friends.filter(id => String(id) !== String(friendId));
+    await me.save();
+
+    if (friend) {
+      friend.friends = friend.friends.filter(id => String(id) !== String(req.userId));
+      await friend.save();
+    }
+
+    res.json({ message: 'Friend removed' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ============================================================
+// MESSAGES
+// ============================================================
+app.get('/api/messages/:friendId', authMiddleware, async (req, res) => {
+  try {
+    const { friendId } = req.params;
+    const messages = await Message.find({
+      $or: [
+        { sender: req.userId, receiver: friendId },
+        { sender: friendId, receiver: req.userId }
+      ]
+    })
+      .populate('sender', 'name rollNo profilePic')
+      .populate('receiver', 'name rollNo profilePic')
+      .sort({ timestamp: 1 })
+      .limit(500);
+
+    res.json(messages);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/messages/clear/:friendId', authMiddleware, async (req, res) => {
+  try {
+    const { friendId } = req.params;
+    await Message.deleteMany({
+      $or: [
+        { sender: req.userId, receiver: friendId },
+        { sender: friendId, receiver: req.userId }
+      ]
+    });
+    res.json({ message: 'Chat cleared' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ============================================================
+// FILE UPLOAD (base64 → file on disk)
+// ============================================================
+app.post('/api/upload', authMiddleware, async (req, res) => {
+  try {
+    const { fileName, fileData } = req.body;
+    if (!fileName || !fileData) return res.status(400).json({ error: 'fileName and fileData required' });
+
+    // fileData: "data:image/png;base64,XXXXXX"
+    const matches = fileData.match(/^data:(.+?);base64,(.+)$/);
+    if (!matches) return res.status(400).json({ error: 'Invalid file format' });
+
+    const mimeType = matches[1];
+    const base64Data = matches[2];
+    const buffer = Buffer.from(base64Data, 'base64');
+
+    const ext = (fileName.split('.').pop() || 'bin').toLowerCase();
+    const safeName = `file_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`;
+    const filePath = path.join(UPLOAD_DIR, safeName);
+
+    fs.writeFileSync(filePath, buffer);
+    const fileUrl = `/uploads/${safeName}`;
+
+    res.json({ fileUrl, mimeType });
+  } catch (err) {
+    console.error('Upload error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ============================================================
+// STATUS
+// ============================================================
+app.get('/api/status', authMiddleware, async (req, res) => {
+  try {
+    const me = await User.findById(req.userId);
+    const friendIds = me.friends;
+
+    const statuses = await Status.find({
+      user: { $in: [...friendIds, req.userId] }
+    })
+      .populate('user', 'name rollNo profilePic')
+      .populate('viewers', 'name rollNo profilePic')
+      .sort({ createdAt: -1 })
+      .limit(50);
+
+    res.json(statuses);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/status', authMiddleware, async (req, res) => {
+  try {
+    const { mediaType, mediaUrl, text, bgColor } = req.body;
+    const status = await Status.create({
+      user: req.userId,
+      mediaType: mediaType || 'text',
+      mediaUrl: mediaUrl || '',
+      text: text || '',
+      bgColor: bgColor || '#2563eb'
+    });
+
+    // Notify all friends
+    const me = await User.findById(req.userId);
+    me.friends.forEach(fid => {
+      const sid = userSockets.get(String(fid));
+      if (sid) io.to(sid).emit('statusUpdated');
+    });
+
+    res.json(status);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/status/view/:id', authMiddleware, async (req, res) => {
+  try {
+    await Status.findByIdAndUpdate(req.params.id, {
+      $addToSet: { viewers: req.userId }
+    });
+    res.json({ message: 'Viewed' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/status/:id', authMiddleware, async (req, res) => {
+  try {
+    const status = await Status.findById(req.params.id);
+    if (!status) return res.status(404).json({ error: 'Not found' });
+    if (String(status.user) !== String(req.userId)) return res.status(403).json({ error: 'Not yours' });
+
+    await Status.findByIdAndDelete(req.params.id);
+    res.json({ message: 'Status deleted' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ============================================================
+// CALL LOGS
+// ============================================================
+app.get('/api/calls', authMiddleware, async (req, res) => {
+  try {
+    const logs = await CallLog.find({
+      $or: [{ caller: req.userId }, { receiver: req.userId }]
+    })
+      .populate('caller', 'name rollNo profilePic')
+      .populate('receiver', 'name rollNo profilePic')
+      .sort({ timestamp: -1 })
+      .limit(100);
+
+    res.json(logs);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/calls/clear', authMiddleware, async (req, res) => {
+  try {
+    await CallLog.deleteMany({
+      $or: [{ caller: req.userId }, { receiver: req.userId }]
+    });
+    res.json({ message: 'Call logs cleared' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ============================================================
+// GROUPS
+// ============================================================
+app.post('/api/groups/create', authMiddleware, async (req, res) => {
   try {
     const { name, memberIds } = req.body;
-    if(!name) return res.status(400).json({ error: 'Group name required' });
-    const members = [req.user.userId, ...(memberIds || [])];
-    const group = new Group({ name, admin: req.user.userId, members });
-    await group.save();
-    members.forEach(mId => io.to(mId.toString()).emit('groupUpdated'));
-    res.status(201).json({ message: 'Group created successfully' });
-  } catch(e) { res.status(500).json({ error: 'Failed to create group' }); }
+    if (!name) return res.status(400).json({ error: 'Group name required' });
+
+    const members = [req.userId, ...(memberIds || []).filter(id => String(id) !== String(req.userId))];
+    const group = await Group.create({
+      name,
+      admin: req.userId,
+      members
+    });
+
+    // Notify all members
+    members.forEach(mid => {
+      const sid = userSockets.get(String(mid));
+      if (sid) io.to(sid).emit('groupUpdated');
+    });
+
+    res.json({ message: 'Group created', group });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
-app.get('/api/groups/details/:groupId', auth, async (req, res) => {
+app.get('/api/groups/messages/:groupId', authMiddleware, async (req, res) => {
   try {
-    const group = await Group.findById(req.params.groupId).populate('members', 'username profilePic').populate('admin', 'username');
-    if(!group) return res.status(404).json({ error: 'Group not found' });
+    const messages = await GroupMessage.find({ group: req.params.groupId })
+      .populate('sender', 'name rollNo profilePic')
+      .sort({ timestamp: 1 })
+      .limit(500);
+    res.json(messages);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/groups/details/:groupId', authMiddleware, async (req, res) => {
+  try {
+    const group = await Group.findById(req.params.groupId)
+      .populate('admin', 'name rollNo')
+      .populate('members', 'name rollNo profilePic');
+    if (!group) return res.status(404).json({ error: 'Group not found' });
     res.json(group);
-  } catch(e) { res.status(500).json({ error: 'Failed' }); }
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
-app.post('/api/groups/add-member', auth, async (req, res) => {
+app.post('/api/groups/add-member', authMiddleware, async (req, res) => {
   try {
-    const { groupId, username } = req.body;
+    const { groupId, rollNo } = req.body;
     const group = await Group.findById(groupId);
     if (!group) return res.status(404).json({ error: 'Group not found' });
-    if (group.admin.toString() !== req.user.userId) return res.status(403).json({ error: 'Only admin can add members' });
+    if (String(group.admin) !== String(req.userId)) return res.status(403).json({ error: 'Only admin can add' });
 
-    const userToAdd = await User.findOne({ username });
-    if (!userToAdd) return res.status(404).json({ error: 'User not found' });
-    if (group.members.includes(userToAdd._id)) return res.status(400).json({ error: 'User already in group' });
+    const user = await User.findOne({ rollNo: rollNo.trim().toUpperCase() });
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    if (group.members.includes(user._id)) return res.status(400).json({ error: 'Already a member' });
 
-    group.members.push(userToAdd._id);
+    group.members.push(user._id);
     await group.save();
-    group.members.forEach(mId => io.to(mId.toString()).emit('groupUpdated'));
-    res.json({ message: 'Member added successfully' });
-  } catch(e) { res.status(500).json({ error: 'Failed' }); }
+
+    group.members.forEach(mid => {
+      const sid = userSockets.get(String(mid));
+      if (sid) io.to(sid).emit('groupUpdated');
+    });
+
+    res.json({ message: 'Member added' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
-app.post('/api/groups/remove-member', auth, async (req, res) => {
+app.post('/api/groups/remove-member', authMiddleware, async (req, res) => {
   try {
     const { groupId, memberId } = req.body;
     const group = await Group.findById(groupId);
     if (!group) return res.status(404).json({ error: 'Group not found' });
-    if (group.admin.toString() !== req.user.userId) return res.status(403).json({ error: 'Only admin can remove members' });
+    if (String(group.admin) !== String(req.userId)) return res.status(403).json({ error: 'Only admin can remove' });
 
-    group.members = group.members.filter(id => id.toString() !== memberId);
+    group.members = group.members.filter(m => String(m) !== String(memberId));
     await group.save();
-    group.members.forEach(mId => io.to(mId.toString()).emit('groupUpdated'));
-    io.to(memberId).emit('groupUpdated');
-    res.json({ message: 'Member removed successfully' });
-  } catch(e) { res.status(500).json({ error: 'Failed' }); }
+
+    group.members.forEach(mid => {
+      const sid = userSockets.get(String(mid));
+      if (sid) io.to(sid).emit('groupUpdated');
+    });
+
+    res.json({ message: 'Member removed' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
-app.post('/api/groups/toggle-restriction', auth, async (req, res) => {
-  try {
-    const { groupId } = req.body;
-    const group = await Group.findById(groupId);
-    if (!group) return res.status(404).json({ error: 'Group not found' });
-    if (group.admin.toString() !== req.user.userId) return res.status(403).json({ error: 'Only admin can change settings' });
-
-    group.restrictMessages = !group.restrictMessages;
-    await group.save();
-    group.members.forEach(mId => io.to(mId.toString()).emit('groupUpdated'));
-    res.json({ message: 'Group settings updated', restrictMessages: group.restrictMessages });
-  } catch(e) { res.status(500).json({ error: 'Failed' }); }
-});
-
-app.delete('/api/groups/:groupId', auth, async (req, res) => {
+app.delete('/api/groups/:groupId', authMiddleware, async (req, res) => {
   try {
     const group = await Group.findById(req.params.groupId);
     if (!group) return res.status(404).json({ error: 'Group not found' });
-    if (group.admin.toString() !== req.user.userId) return res.status(403).json({ error: 'Only admin can delete the group' });
+    if (String(group.admin) !== String(req.userId)) return res.status(403).json({ error: 'Only admin can delete' });
 
-    const members = group.members;
-    await GroupMessage.deleteMany({ group: group._id });
-    await Group.findByIdAndDelete(group._id);
-    members.forEach(mId => io.to(mId.toString()).emit('groupUpdated'));
-    res.json({ message: 'Group deleted successfully' });
-  } catch(e) { res.status(500).json({ error: 'Failed to delete group' }); }
-});
+    const memberIds = group.members.slice();
+    await Group.findByIdAndDelete(req.params.groupId);
+    await GroupMessage.deleteMany({ group: req.params.groupId });
 
-app.get('/api/groups/messages/:groupId', auth, async (req, res) => {
-  try {
-    const messages = await GroupMessage.find({ group: req.params.groupId })
-      .populate('sender', 'username profilePic')
-      .sort('timestamp');
-    res.json(messages);
-  } catch(e) { res.status(500).json({ error: 'Failed' }); }
-});
-
-app.post('/api/status', auth, async (req, res) => {
-  try {
-    const { mediaUrl, mediaType, text, bgColor } = req.body;
-    const status = new Status({ user: req.user.userId, mediaUrl: mediaUrl || '', mediaType: mediaType || 'text', text: text || '', bgColor: bgColor || '#111b21', viewers: [] });
-    await status.save();
-    io.emit('statusUpdated');
-    res.status(201).json({ message: 'Status uploaded' });
-  } catch (err) { res.status(500).json({ error: 'Failed' }); }
-});
-
-app.get('/api/status', auth, async (req, res) => {
-  try {
-    const user = await User.findById(req.user.userId);
-    const visibleUserIds = [...user.friends, req.user.userId];
-    const statuses = await Status.find({ user: { $in: visibleUserIds } })
-      .populate('user', 'username profilePic')
-      .populate('viewers', 'username profilePic')
-      .sort('-createdAt');
-    res.json(statuses);
-  } catch (err) { res.status(500).json({ error: 'Failed' }); }
-});
-
-app.post('/api/status/view/:statusId', auth, async (req, res) => {
-  try {
-    const status = await Status.findById(req.params.statusId);
-    if(status && !status.viewers.includes(req.user.userId)) {
-      status.viewers.push(req.user.userId);
-      await status.save();
-    }
-    res.json({ message: 'Viewed' });
-  } catch (err) { res.status(500).json({ error: 'Failed' }); }
-});
-
-app.delete('/api/status/:statusId', auth, async (req, res) => {
-  try {
-    const status = await Status.findById(req.params.statusId);
-    if (!status) return res.status(404).json({ error: 'Status not found' });
-    if (status.user.toString() !== req.user.userId) return res.status(403).json({ error: 'Unauthorized' });
-    await Status.findByIdAndDelete(req.params.statusId);
-    io.emit('statusUpdated');
-    res.json({ message: 'Status deleted successfully' });
-  } catch (err) { res.status(500).json({ error: 'Failed' }); }
-});
-
-app.get('/api/calls', auth, async (req, res) => {
-  try {
-    const logs = await CallLog.find({ $or: [{ caller: req.user.userId }, { receiver: req.user.userId }] })
-      .populate('caller', 'username profilePic')
-      .populate('receiver', 'username profilePic')
-      .sort('-timestamp');
-    res.json(logs);
-  } catch (err) { res.status(500).json({ error: 'Failed' }); }
-});
-
-app.delete('/api/calls/clear', auth, async (req, res) => {
-  try {
-    await CallLog.deleteMany({ $or: [{ caller: req.user.userId }, { receiver: req.user.userId }] });
-    res.json({ message: 'Call history cleared successfully' });
-  } catch (err) { res.status(500).json({ error: 'Failed to clear call history' }); }
-});
-
-app.get('/api/messages/:friendId', auth, async (req, res) => {
-  await Message.updateMany({ sender: req.params.friendId, receiver: req.user.userId, status: { $ne: 'read' } }, { $set: { status: 'read' } });
-  io.to(req.params.friendId).emit('messagesMarkedRead', { by: req.user.userId });
-  const messages = await Message.find({
-    $or: [{ sender: req.user.userId, receiver: req.params.friendId }, { sender: req.params.friendId, receiver: req.user.userId }]
-  }).sort('timestamp');
-  res.json(messages);
-});
-
-app.delete('/api/messages/clear/:friendId', auth, async (req, res) => {
-  try {
-    await Message.deleteMany({
-      $or: [{ sender: req.user.userId, receiver: req.params.friendId }, { sender: req.params.friendId, receiver: req.user.userId }]
+    memberIds.forEach(mid => {
+      const sid = userSockets.get(String(mid));
+      if (sid) io.to(sid).emit('groupUpdated');
     });
-    res.json({ message: 'Chat cleared successfully' });
-  } catch (err) { res.status(500).json({ error: 'Failed' }); }
+
+    res.json({ message: 'Group deleted' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
-const onlineUsers = new Map();
+// ============================================================
+// SOCKET.IO — REALTIME
+// ============================================================
+const userSockets = new Map(); // userId → socketId
 
 io.on('connection', (socket) => {
-  let currentUserId = null;
-  
-  socket.on('identify', async (data) => {
-    const userId = typeof data === 'object' ? data.userId : data;
-    const subscriptionId = typeof data === 'object' ? data.subscriptionId : null;
+  console.log('🔌 Socket connected:', socket.id);
+
+  socket.on('identify', async ({ userId, subscriptionId }) => {
     if (!userId) return;
+    userSockets.set(String(userId), socket.id);
+    socket.userId = String(userId);
 
-    currentUserId = userId; 
-    onlineUsers.set(userId, socket.id); 
-    socket.join(userId); // Har user apne userId ke room me join ho jata hai
+    try {
+      const update = { isOnline: true, lastSeen: new Date() };
+      if (subscriptionId) update.onesignalId = subscriptionId;
+      await User.findByIdAndUpdate(userId, update);
 
-    await User.findByIdAndUpdate(userId, { 
-      isOnline: true, 
-      ...(subscriptionId ? { onesignalSubscriptionId: subscriptionId } : {}) 
-    });
-
-    // Sabhi ko turant broadcast karein ki user online ho gaya hai
-    io.emit('statusChanged', { userId, isOnline: true });
+      // Notify friends
+      const user = await User.findById(userId).populate('friends', '_id');
+      (user.friends || []).forEach(f => {
+        const sid = userSockets.get(String(f._id));
+        if (sid) io.to(sid).emit('statusChanged', { userId, isOnline: true, lastSeen: new Date() });
+      });
+    } catch (e) { console.warn('identify error:', e.message); }
   });
 
-  socket.on('joinGroup', (groupId) => { 
-    if (groupId) socket.join(groupId); 
-  });
-
-  socket.on('sendGroupMessage', async (data) => {
-    const { groupId, senderId, text, fileUrl, fileName, fileType } = data;
-    const group = await Group.findById(groupId);
-    if (!group) return;
-
-    if (group.restrictMessages && group.admin.toString() !== senderId) {
-      socket.emit('errorMessage', { error: 'Only admin can send messages in this group.' });
-      return;
-    }
-
-    const msg = new GroupMessage({ group: groupId, sender: senderId, text, fileUrl, fileName, fileType });
-    await msg.save();
-    const populatedMsg = await GroupMessage.findById(msg._id).populate('sender', 'username profilePic');
-    io.to(groupId).emit('receiveGroupMessage', populatedMsg);
-  });
-
+  // ========== 1-on-1 Message ==========
   socket.on('sendMessage', async (data) => {
-    // Check karein ki receiver online hai ya nahi (room me active hai)
-    const receiverSocketId = onlineUsers.get(data.receiverId);
-    const status = receiverSocketId ? 'delivered' : 'sent';
+    try {
+      const { senderId, receiverId, text, fileUrl, fileName, fileType, timestamp, isEncrypted, replyTo } = data;
 
-    const msg = new Message({ 
-      sender: data.senderId, 
-      receiver: data.receiverId, 
-      text: data.text, 
-      fileUrl: data.fileUrl, 
-      fileName: data.fileName, 
-      fileType: data.fileType,
-      status: status, 
-      isEncrypted: data.isEncrypted || false
-    });
-    
-    await msg.save();
-    const msgDataToSend = msg.toObject();
-    if(data.replyTo) msgDataToSend.replyTo = data.replyTo;
+      const msg = await Message.create({
+        sender: senderId,
+        receiver: receiverId,
+        text: text || '',
+        fileUrl: fileUrl || null,
+        fileName: fileName || null,
+        fileType: fileType || null,
+        status: 'sent',
+        replyTo: replyTo || null,
+        isEncrypted: !!isEncrypted,
+        timestamp: timestamp ? new Date(timestamp) : new Date()
+      });
 
-    // Turant dono users ke rooms par emit karein
-    io.to(data.receiverId).emit('receiveMessage', msgDataToSend);
-    io.to(data.senderId).emit('receiveMessage', msgDataToSend);
+      const populated = await Message.findById(msg._id)
+        .populate('sender', 'name rollNo profilePic')
+        .populate('receiver', 'name rollNo profilePic');
 
-    if (!receiverSocketId) {
-      try {
-        const receiverUser = await User.findById(data.receiverId);
-        if (receiverUser && receiverUser.onesignalSubscriptionId) {
-          await sendPushNotification(receiverUser.onesignalSubscriptionId, "New Message", data.text ? (data.text.length > 50 ? data.text.substring(0, 50) + '...' : data.text) : "Sent an attachment");
-        }
-      } catch (dbErr) { console.error("Push Error:", dbErr); }
+      const senderSocket = userSockets.get(String(senderId));
+      const receiverSocket = userSockets.get(String(receiverId));
+
+      if (senderSocket) io.to(senderSocket).emit('receiveMessage', populated);
+      if (receiverSocket && receiverSocket !== senderSocket) {
+        io.to(receiverSocket).emit('receiveMessage', populated);
+      }
+    } catch (err) {
+      console.error('sendMessage error:', err.message);
+      socket.emit('errorMessage', { error: 'Failed to send message' });
     }
   });
 
-  socket.on('callUser', async ({ userToCall, signalData, from, name, callType }) => {
-    const log = new CallLog({ caller: from, receiver: userToCall, callType, direction: 'outgoing' });
-    await log.save();
-    io.to(userToCall).emit('incomingCall', { signal: signalData, from, name, callType, logId: log._id });
-  });
+  // ========== Group Message ==========
+  socket.on('sendGroupMessage', async (data) => {
+    try {
+      const { groupId, senderId, text, fileUrl, fileName, fileType } = data;
 
-  socket.on('answerCall', async (data) => {
-    const log = new CallLog({ caller: data.from, receiver: data.to, callType: data.callType, direction: 'incoming' });
-    await log.save();
-    io.to(data.to).emit('callAccepted', data.signal);
-  });
+      const msg = await GroupMessage.create({
+        group: groupId,
+        sender: senderId,
+        text: text || '',
+        fileUrl: fileUrl || null,
+        fileName: fileName || null,
+        fileType: fileType || null
+      });
 
-  socket.on('iceCandidate', ({ candidate, to }) => { io.to(to).emit('iceCandidate', { candidate }); });
-  socket.on('endCall', ({ to }) => { io.to(to).emit('callEnded'); });
-  socket.on('typing', ({ receiverId, isTyping }) => { io.to(receiverId).emit('typingEmit', { senderId: currentUserId, isTyping }); });
-  
-  socket.on('reactionEmit', async ({ msgId, emoji, receiverId }) => {
-    await Message.findByIdAndUpdate(msgId, { reaction: emoji });
-    io.to(receiverId).emit('reactionReceived', { msgId, emoji });
-    io.to(currentUserId).emit('reactionReceived', { msgId, emoji });
-  });
+      const populated = await GroupMessage.findById(msg._id)
+        .populate('sender', 'name rollNo profilePic');
 
-  socket.on('deleteMsgEmit', async ({ msgId, receiverId }) => {
-    await Message.findByIdAndUpdate(msgId, { text: '🚫 This message was deleted', fileUrl: null, fileName: null, fileType: null, isEncrypted: false });
-    io.to(receiverId).emit('msgDeleted', { msgId });
-    io.to(currentUserId).emit('msgDeleted', { msgId });
-  });
-
-  socket.on('clearChatEmit', ({ receiverId }) => { io.to(receiverId).emit('chatClearedEvent'); });
-  
-  socket.on('readEmit', async ({ msgId, senderId }) => {
-     await Message.findByIdAndUpdate(msgId, { status: 'read' });
-     io.to(senderId).emit('msgStatusUpdate', { msgId, status: 'read' });
-  });
-
-  socket.on('disconnect', async () => {
-    if (currentUserId) {
-      // Agar yahi current socket map me registered hai tabhi remove karein
-      if (onlineUsers.get(currentUserId) === socket.id) {
-        onlineUsers.delete(currentUserId);
-        const now = new Date();
-        await User.findByIdAndUpdate(currentUserId, { isOnline: false, lastSeen: now });
-        io.emit('statusChanged', { userId: currentUserId, isOnline: false, lastSeen: now });
+      // Broadcast to all group members
+      const group = await Group.findById(groupId).select('members');
+      if (group) {
+        group.members.forEach(mid => {
+          const sid = userSockets.get(String(mid));
+          if (sid) io.to(sid).emit('receiveGroupMessage', populated);
+        });
       }
+    } catch (err) {
+      console.error('sendGroupMessage error:', err.message);
+    }
+  });
+
+  socket.on('joinGroup', (groupId) => {
+    if (groupId) socket.join(`group_${groupId}`);
+  });
+
+  // ========== Typing ==========
+  socket.on('typing', ({ receiverId, isTyping }) => {
+    const sid = userSockets.get(String(receiverId));
+    if (sid) io.to(sid).emit('typingEmit', { senderId: socket.userId, isTyping });
+  });
+
+  // ========== Reaction ==========
+  socket.on('reactionEmit', async ({ msgId, emoji, receiverId }) => {
+    try {
+      await Message.findByIdAndUpdate(msgId, { reaction: emoji });
+      const sid = userSockets.get(String(receiverId));
+      if (sid) io.to(sid).emit('reactionReceived', { msgId, emoji });
+    } catch (e) {}
+  });
+
+  // ========== Delete Message ==========
+  socket.on('deleteMsgEmit', async ({ msgId, receiverId }) => {
+    try {
+      await Message.findByIdAndDelete(msgId);
+      const sid = userSockets.get(String(receiverId));
+      if (sid) io.to(sid).emit('msgDeleted', { msgId });
+      socket.emit('msgDeleted', { msgId });
+    } catch (e) {}
+  });
+
+  // ========== Clear Chat ==========
+  socket.on('clearChatEmit', ({ receiverId }) => {
+    const sid = userSockets.get(String(receiverId));
+    if (sid) io.to(sid).emit('chatClearedEvent');
+  });
+
+  // ========== Read Receipt ==========
+  socket.on('readEmit', async ({ msgId, senderId }) => {
+    try {
+      await Message.findByIdAndUpdate(msgId, { status: 'read' });
+      const sid = userSockets.get(String(senderId));
+      if (sid) io.to(sid).emit('reactionReceived', { msgId, emoji: '✓✓' });
+    } catch (e) {}
+  });
+
+  // ========== Disconnect ==========
+  socket.on('disconnect', async () => {
+    console.log('❌ Socket disconnected:', socket.id);
+    if (socket.userId) {
+      userSockets.delete(socket.userId);
+      try {
+        await User.findByIdAndUpdate(socket.userId, { isOnline: false, lastSeen: new Date() });
+        const user = await User.findById(socket.userId).populate('friends', '_id');
+        (user?.friends || []).forEach(f => {
+          const sid = userSockets.get(String(f._id));
+          if (sid) io.to(sid).emit('statusChanged', { userId: socket.userId, isOnline: false, lastSeen: new Date() });
+        });
+      } catch (e) {}
     }
   });
 });
 
-const PORT = process.env.PORT || `3000`;
-server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+// ============================================================
+// HEALTH + FALLBACK
+// ============================================================
+app.get('/health', (req, res) => res.json({ status: 'ok', time: new Date() }));
+
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+// ============================================================
+// START SERVER
+// ============================================================
+server.listen(PORT, () => {
+  console.log(`🚀 BM Chat server running on http://localhost:${PORT}`);
+  console.log(`📁 Uploads: ${UPLOAD_DIR}`);
+  console.log(`🔐 JWT: ${JWT_SECRET.slice(0, 12)}...`);
+});
