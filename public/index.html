@@ -3,11 +3,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>WhatsApp Ultra Pro</title>
-  <link rel="stylesheet" href="style.css">
+  <title>BM Group Chat Portal</title>
   <script src="/socket.io/socket.io.js"></script>
   <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
-  <!-- OneSignal Web SDK Script -->
   <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
   <script>
     window.OneSignalDeferred = window.OneSignalDeferred || [];
@@ -15,103 +13,441 @@
       await OneSignal.init({
         appId: "45011a3c-d888-453d-a7f3-b7a8e436c09d",
         safari_web_id: "web.onesignal.auto.00000000-0000-0000-0000-000000000000",
-        notifyButton: {
-          enable: true,
-        },
+        notifyButton: { enable: true },
         serviceWorkerPath: "OneSignalSDKWorker.js",
       });
     });
   </script>
+  <style>
+    /* ============================================================
+       BM Group Chat Portal — All Styles (Attendance Portal Theme)
+       ============================================================ */
+    * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+    html, body { height: 100%; width: 100%; overflow: hidden; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+    .hidden { display: none !important; }
+
+    :root {
+      --brand-50: #eff6ff; --brand-100: #dbeafe; --brand-200: #bfdbfe;
+      --brand-500: #3b82f6; --brand-600: #2563eb; --brand-700: #1d4ed8; --brand-900: #1e3a8a;
+      --slate-50: #f8fafc; --slate-100: #f1f5f9; --slate-200: #e2e8f0; --slate-300: #cbd5e1;
+      --slate-400: #94a3b8; --slate-500: #64748b; --slate-600: #475569; --slate-700: #334155;
+      --slate-800: #1e293b; --slate-900: #0f172a;
+      --emerald-500: #10b981; --emerald-600: #059669; --emerald-700: #047857;
+      --rose-500: #f43f5e; --rose-600: #e11d48;
+      --amber-500: #f59e0b; --amber-600: #d97706;
+      --radius: 14px; --radius-sm: 10px; --radius-lg: 20px; --radius-full: 9999px;
+      --shadow-xs: 0 1px 2px rgba(15,23,42,.04);
+      --shadow-sm: 0 1px 3px rgba(15,23,42,.06), 0 1px 2px rgba(15,23,42,.04);
+      --shadow: 0 4px 16px rgba(15,23,42,.07);
+      --shadow-md: 0 12px 32px rgba(15,23,42,.10);
+      --shadow-lg: 0 24px 56px rgba(15,23,42,.16);
+      --ease: cubic-bezier(.4,0,.2,1);
+      --chat-bg: #f8fafc; --chat-pattern: #e2e8f0;
+      --msg-sent: #dbeafe; --msg-recv: #ffffff;
+      --card-bg: #ffffff;
+    }
+
+    body.dark-theme {
+      --brand-50: #172554; --brand-100: #1e3a8a; --brand-200: #1e40af;
+      --slate-50: #0f172a; --slate-100: #1e293b; --slate-200: #334155; --slate-300: #475569;
+      --slate-400: #64748b; --slate-500: #94a3b8; --slate-600: #cbd5e1;
+      --slate-700: #e2e8f0; --slate-800: #f1f5f9; --slate-900: #ffffff;
+      --chat-bg: #0f172a; --chat-pattern: #1e293b;
+      --msg-sent: #1e40af; --msg-recv: #1e293b;
+      --card-bg: #1e293b;
+    }
+
+    body {
+      background: linear-gradient(180deg, #f1f5f9 0%, #e2e8f0 100%);
+      color: var(--slate-800); min-height: 100vh;
+      display: flex; align-items: center; justify-content: center;
+    }
+    body.dark-theme { background: linear-gradient(180deg, #0f172a 0%, #1e293b 100%); }
+
+    /* ---------- AUTH ---------- */
+    .centered-container { display: flex; justify-content: center; align-items: center; height: 100%; width: 100%; padding: 20px; }
+    .card {
+      background: var(--card-bg); padding: 36px 32px; border-radius: 18px;
+      width: 100%; max-width: 400px; box-shadow: var(--shadow-lg);
+      text-align: center; border: 1px solid var(--slate-200);
+    }
+    .auth-logo {
+      width: 64px; height: 64px; margin: 0 auto 18px; border-radius: 16px;
+      background: linear-gradient(135deg, var(--brand-600), var(--brand-900));
+      color: #fff; display: flex; align-items: center; justify-content: center;
+      font-weight: 800; font-size: 22px; box-shadow: 0 8px 22px rgba(37,99,235,.30);
+    }
+    .auth-title { color: var(--slate-900); font-size: 24px; font-weight: 800; letter-spacing: -.02em; margin-bottom: 6px; }
+    .auth-sub { color: var(--slate-500); font-size: 12.5px; margin-bottom: 24px; font-weight: 500; }
+    .card input, .card select {
+      width: 100%; padding: 12px 15px; margin-bottom: 12px;
+      border: 1.5px solid var(--slate-200); background: var(--slate-50);
+      border-radius: 11px; outline: none; font-size: 14px; color: var(--slate-800);
+      font-family: inherit; transition: all .22s var(--ease);
+    }
+    .card input:focus, .card select:focus { border-color: var(--brand-500); box-shadow: 0 0 0 4px var(--brand-100); background: var(--card-bg); }
+    .btn-primary {
+      background: linear-gradient(135deg, var(--brand-600), var(--brand-700));
+      color: #fff; border: none; padding: 12px 20px; border-radius: 11px;
+      font-weight: 700; cursor: pointer; font-size: 14px; font-family: inherit;
+      box-shadow: 0 4px 12px rgba(37,99,235,.24); transition: all .22s var(--ease);
+    }
+    .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 8px 22px rgba(37,99,235,.36); }
+    .btn-secondary {
+      background: var(--card-bg); color: var(--slate-700);
+      border: 1.5px solid var(--slate-300); padding: 12px 20px;
+      border-radius: 11px; font-weight: 700; cursor: pointer; font-size: 14px;
+      font-family: inherit; transition: all .22s var(--ease);
+    }
+    .btn-secondary:hover { border-color: var(--brand-500); color: var(--brand-700); }
+    .row { display: flex; gap: 10px; width: 100%; margin-top: 15px; }
+    .row > * { flex: 1; }
+
+    /* ---------- APP ---------- */
+    .app-container { display: flex; width: 100vw; height: 100vh; background: var(--card-bg); overflow: hidden; }
+
+    /* ---------- SIDEBAR ---------- */
+    .sidebar { width: 360px; background: var(--card-bg); border-right: 1px solid var(--slate-200); display: flex; flex-direction: column; height: 100%; flex-shrink: 0; }
+    .sidebar-header {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 12px 16px; background: linear-gradient(135deg, var(--brand-600), var(--brand-900));
+      color: #fff; flex-shrink: 0;
+    }
+    .profile-info { display: flex; align-items: center; gap: 12px; min-width: 0; flex: 1; }
+    .avatar-img { width: 42px; height: 42px; border-radius: 50%; object-fit: cover; cursor: pointer; border: 2px solid rgba(255,255,255,.3); flex-shrink: 0; }
+    .profile-info h3 { font-size: 15px; font-weight: 700; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 160px; }
+    .profile-info .user-roll { font-size: 10.5px; opacity: .85; font-weight: 500; letter-spacing: .3px; }
+    .btn-logout {
+      background: rgba(255,255,255,.18); color: #fff; border: none;
+      padding: 6px 12px; border-radius: 8px; font-weight: 700; cursor: pointer;
+      font-size: 11.5px; font-family: inherit; transition: background .2s;
+    }
+    .btn-logout:hover { background: rgba(255,255,255,.30); }
+    .btn-theme-toggle {
+      background: rgba(255,255,255,.18); border: none; font-size: 15px;
+      cursor: pointer; padding: 6px 10px; border-radius: 8px; color: #fff;
+    }
+    .btn-theme-toggle:hover { background: rgba(255,255,255,.30); }
+
+    .sidebar-tabs { display: flex; background: var(--card-bg); border-bottom: 1px solid var(--slate-200); flex-shrink: 0; }
+    .tab-btn {
+      flex: 1; padding: 12px 8px; border: none; background: transparent;
+      font-weight: 700; cursor: pointer; color: var(--slate-500); font-size: 12.5px;
+      font-family: inherit; border-bottom: 3px solid transparent;
+      transition: all .22s var(--ease);
+    }
+    .tab-btn:hover { background: var(--brand-50); color: var(--brand-700); }
+    .tab-btn.active { color: var(--brand-700); border-bottom-color: var(--brand-600); }
+
+    .search-box { display: flex; padding: 10px 14px; gap: 8px; background: var(--card-bg); border-bottom: 1px solid var(--slate-100); flex-shrink: 0; }
+    .search-box input {
+      flex: 1; padding: 9px 14px; background: var(--slate-100);
+      border: 1px solid transparent; border-radius: 10px; outline: none;
+      font-size: 13px; color: var(--slate-800); font-family: inherit; transition: all .2s;
+    }
+    .search-box input:focus { background: var(--card-bg); border-color: var(--brand-500); box-shadow: 0 0 0 3px var(--brand-100); }
+    .btn-add {
+      background: linear-gradient(135deg, var(--brand-600), var(--brand-700));
+      color: white; border: none; width: 36px; height: 36px; border-radius: 10px;
+      font-size: 18px; cursor: pointer; font-weight: 700;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .btn-add:hover { transform: scale(1.05); }
+
+    .sidebar-scroll { flex: 1; overflow-y: auto; background: var(--card-bg); }
+    .section-title {
+      padding: 12px 16px 6px; font-size: 10.5px; color: var(--brand-700);
+      font-weight: 800; text-transform: uppercase; letter-spacing: .08em;
+    }
+    .list-container { width: 100%; }
+    .list-item {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 12px 16px; border-bottom: 1px solid var(--slate-100);
+      cursor: pointer; transition: background .18s;
+    }
+    .list-item:hover { background: var(--brand-50); }
+    .pin-icon { color: var(--brand-600); margin-left: 4px; font-size: 11px; }
+    .online-dot {
+      width: 11px; height: 11px; background: var(--emerald-500);
+      border-radius: 50%; position: absolute; bottom: 1px; right: 1px;
+      border: 2px solid var(--card-bg);
+    }
+    .status-ring { border: 2.5px solid var(--brand-600); padding: 2px; border-radius: 50%; display: inline-block; }
+
+    /* ---------- CHAT AREA ---------- */
+    .chat-area { flex: 1; display: flex; flex-direction: column; background: var(--chat-bg); height: 100%; position: relative; overflow: hidden; }
+    .chat-window { display: flex; flex-direction: column; height: 100%; width: 100%; }
+    .chat-header {
+      display: flex; align-items: center; padding: 10px 16px;
+      background: linear-gradient(135deg, var(--brand-600), var(--brand-900));
+      color: #fff; gap: 12px; height: 64px; flex-shrink: 0;
+      box-shadow: 0 2px 8px rgba(15,23,42,.08);
+    }
+    .btn-back {
+      background: rgba(255,255,255,.15); border: none; color: #fff;
+      font-size: 18px; display: none; cursor: pointer;
+      width: 36px; height: 36px; border-radius: 9px;
+      align-items: center; justify-content: center;
+    }
+    .avatar-img-chat { width: 40px; height: 40px; border-radius: 50%; object-fit: cover; border: 2px solid rgba(255,255,255,.3); }
+    .header-info { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+    #active-friend-name { font-weight: 700; font-size: 15px; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .status-indicator { font-size: 11.5px; color: rgba(255,255,255,.8); font-weight: 500; }
+    .chat-header-actions { display: flex; align-items: center; gap: 6px; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+    .chat-header-actions::-webkit-scrollbar { display: none; }
+    .chat-search-input {
+      padding: 6px 12px; border-radius: 14px;
+      border: 1px solid rgba(255,255,255,.3); outline: none; font-size: 12.5px;
+      background: rgba(255,255,255,.15); color: #fff; min-width: 120px;
+    }
+    .chat-search-input::placeholder { color: rgba(255,255,255,.7); }
+    .icon-btn {
+      background: rgba(255,255,255,.12); border: none; font-size: 15px;
+      cursor: pointer; color: #fff; width: 36px; height: 36px; border-radius: 9px;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0; transition: background .2s;
+    }
+    .icon-btn:hover { background: rgba(255,255,255,.25); }
+
+    .messages-container {
+      flex: 1; padding: 20px 16px; overflow-y: auto;
+      background-color: var(--chat-bg);
+      background-image: radial-gradient(var(--chat-pattern) 1px, transparent 1px);
+      background-size: 20px 20px;
+      display: flex; flex-direction: column; gap: 8px;
+    }
+    .msg {
+      max-width: 75%; padding: 9px 13px; border-radius: 12px; font-size: 14px;
+      word-wrap: break-word; box-shadow: 0 1px 2px rgba(15,23,42,.06);
+      position: relative; animation: msgIn .25s var(--ease);
+    }
+    @keyframes msgIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+    .msg.sent { align-self: flex-end; background: var(--msg-sent); color: var(--slate-900); border-top-right-radius: 3px; }
+    .msg.received { align-self: flex-start; background: var(--msg-recv); color: var(--slate-800); border-top-left-radius: 3px; border: 1px solid var(--slate-200); }
+    .msg img, .msg video, .msg audio { max-width: 100%; border-radius: 8px; margin-bottom: 4px; display: block; }
+    .msg-del-btn {
+      display: none; position: absolute; top: 4px; right: 4px;
+      background: rgba(244,63,94,.15); border: none; border-radius: 50%;
+      width: 20px; height: 20px; font-size: 10px; cursor: pointer;
+      color: var(--rose-600); align-items: center; justify-content: center;
+    }
+    .msg:hover .msg-del-btn { display: flex; }
+    .msg-action-row {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-top: 6px; padding-top: 5px;
+      border-top: 1px solid rgba(15,23,42,.06); font-size: 11.5px;
+    }
+    .reply-action-btn { color: var(--brand-700); cursor: pointer; font-weight: 700; }
+    .emoji-picker-inline {
+      display: flex; gap: 5px; background: rgba(255,255,255,.7);
+      padding: 2px 7px; border-radius: 12px; cursor: pointer;
+      border: 1px solid var(--slate-200);
+    }
+    .emoji-picker-inline span { transition: transform .18s; }
+    .emoji-picker-inline span:hover { transform: scale(1.35); }
+    .reaction-badge {
+      display: inline-block; background: var(--card-bg);
+      border: 1px solid var(--slate-200); padding: 2px 8px;
+      border-radius: 12px; font-size: 12px; margin-top: 4px;
+      box-shadow: var(--shadow-xs);
+    }
+    .quoted-reply-box {
+      background: rgba(37,99,235,.08); border-left: 3px solid var(--brand-600);
+      padding: 5px 9px; font-size: 12px; border-radius: 5px;
+      margin-bottom: 5px; color: var(--slate-600);
+    }
+
+    .reply-preview-bar {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 10px 16px; background: var(--brand-50);
+      border-top: 1px solid var(--brand-200);
+      animation: slideUp .22s var(--ease);
+    }
+    @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+
+    .chat-input-area {
+      display: flex; align-items: center; padding: 10px 12px;
+      background: var(--card-bg); gap: 8px; flex-shrink: 0;
+      height: 66px; border-top: 1px solid var(--slate-200);
+    }
+    .attach-btn, .mic-btn {
+      background: transparent; border: none; font-size: 20px;
+      cursor: pointer; color: var(--slate-500); width: 40px; height: 40px;
+      border-radius: 50%; display: flex; align-items: center;
+      justify-content: center; flex-shrink: 0; transition: all .2s;
+    }
+    .attach-btn:hover, .mic-btn:hover { background: var(--brand-50); color: var(--brand-700); }
+    #message-input {
+      flex: 1; min-width: 0; padding: 11px 16px; border-radius: 22px;
+      border: 1.5px solid var(--slate-200); outline: none;
+      background: var(--slate-50); font-size: 14px; color: var(--slate-800);
+      font-family: inherit; transition: all .2s;
+    }
+    #message-input:focus { background: var(--card-bg); border-color: var(--brand-500); box-shadow: 0 0 0 4px var(--brand-100); }
+    .send-btn {
+      background: linear-gradient(135deg, var(--brand-600), var(--brand-700));
+      color: white; border: none; width: 44px; height: 44px;
+      border-radius: 50%; font-weight: 700; cursor: pointer; font-size: 16px;
+      flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+      box-shadow: 0 4px 12px rgba(37,99,235,.30); transition: all .22s;
+    }
+    .send-btn:hover { transform: translateY(-2px) scale(1.03); box-shadow: 0 8px 22px rgba(37,99,235,.42); }
+
+    /* ---------- MODALS ---------- */
+    .modal-overlay {
+      position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+      background: rgba(15,23,42,.72); backdrop-filter: blur(6px);
+      display: flex; align-items: center; justify-content: center;
+      z-index: 1000; padding: 20px;
+    }
+    .modal-content { max-width: 90%; max-height: 90%; border-radius: 10px; }
+    .modal-close { position: absolute; top: 20px; right: 30px; color: white; font-size: 35px; cursor: pointer; line-height: 1; }
+
+    .call-control-btn {
+      width: 58px; height: 58px; border-radius: 50%; border: none;
+      background: rgba(255,255,255,.2); color: white; font-size: 22px;
+      cursor: pointer; display: flex; align-items: center;
+      justify-content: center; transition: all .22s;
+    }
+    .call-control-btn:hover { background: rgba(255,255,255,.35); transform: scale(1.06); }
+
+    /* Cyber mode matrix rain */
+    #matrix-rain-canvas {
+      position: fixed !important; top: 0; left: 0;
+      width: 100vw !important; height: 100vh !important;
+      pointer-events: none; z-index: 9999; opacity: 0.15;
+    }
+
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--slate-300); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--slate-400); }
+
+    /* ---------- RESPONSIVE ---------- */
+    @media (max-width: 768px) {
+      .sidebar { width: 100vw; }
+      .chat-area { position: fixed; top: 0; left: 0; width: 100vw; height: 100%; z-index: 10; }
+      .mobile-hidden { display: none !important; }
+      .btn-back { display: flex; }
+      .chat-header { padding: 10px 12px; gap: 8px; }
+      .chat-header-actions { gap: 4px; }
+      .icon-btn { width: 32px; height: 32px; font-size: 13px; }
+      .msg { max-width: 85%; }
+    }
+  </style>
 </head>
 <body class="light-theme">
 
+  <!-- Image Preview Modal -->
   <div id="image-modal" class="modal-overlay hidden" onclick="closeImageModal()">
     <span class="modal-close">&times;</span>
     <img id="modal-img" class="modal-content">
   </div>
 
-  <!-- CALL SCREEN / MODAL -->
-  <div id="call-screen" class="modal-overlay hidden" style="background: #111b21; z-index: 3000; flex-direction: column; justify-content: space-between; padding: 20px; user-select: none;">
+  <!-- Call Screen -->
+  <div id="call-screen" class="modal-overlay hidden" style="background: #0f172a; z-index: 3000; flex-direction: column; justify-content: space-between; padding: 20px; user-select: none;">
     <div style="display: flex; flex-direction: column; align-items: center; margin-top: 20px; z-index: 10;">
-      <img id="call-avatar" src="https://www.w3schools.com/howto/img_avatar.png" style="width: 80px; height: 80px; border-radius: 50%; object-fit: cover; border: 3px solid #00a884; margin-bottom: 10px;">
+      <img id="call-avatar" src="https://www.w3schools.com/howto/img_avatar.png" style="width: 90px; height: 90px; border-radius: 50%; object-fit: cover; border: 3px solid #2563eb; margin-bottom: 12px;">
       <h2 id="call-username" style="color: white; font-size: 20px;">Calling...</h2>
-      <p id="call-status-text" style="color: #8696a0; font-size: 13px; margin-top: 3px;">Ringing...</p>
-      <div id="call-timer" class="hidden" style="color: #25d366; font-size: 14px; font-weight: bold; margin-top: 5px;">00:00</div>
+      <p id="call-status-text" style="color: #94a3b8; font-size: 13px; margin-top: 4px;">Ringing...</p>
+      <div id="call-timer" class="hidden" style="color: #10b981; font-size: 15px; font-weight: bold; margin-top: 6px;">00:00</div>
     </div>
 
-    <!-- Video Streams Container with Draggable Local Video -->
-    <div id="video-container" style="display: flex; width: 100%; height: 60vh; justify-content: center; position: relative; overflow: hidden; border-radius: 12px;" class="hidden">
-      <video id="remote-video" autoplay playsinline style="width: 100%; height: 100%; object-fit: cover; background: #000; border-radius: 12px;"></video>
-      <video id="local-video" autoplay playsinline muted style="width: 110px; height: 150px; object-fit: cover; border-radius: 8px; position: absolute; bottom: 20px; right: 20px; border: 2px solid white; background: #000; cursor: grab; z-index: 20; touch-action: none;"></video>
+    <div id="video-container" style="display: flex; width: 100%; height: 60vh; justify-content: center; position: relative; overflow: hidden; border-radius: 14px;" class="hidden">
+      <video id="remote-video" autoplay playsinline style="width: 100%; height: 100%; object-fit: cover; background: #000; border-radius: 14px;"></video>
+      <video id="local-video" autoplay playsinline muted style="width: 110px; height: 150px; object-fit: cover; border-radius: 10px; position: absolute; bottom: 20px; right: 20px; border: 2px solid white; background: #000; cursor: grab; z-index: 20; touch-action: none;"></video>
     </div>
 
-    <!-- Call Controls -->
     <div style="display: flex; gap: 20px; justify-content: center; align-items: center; margin-bottom: 20px; z-index: 10;">
       <button onclick="toggleMute()" id="mute-btn" class="call-control-btn" title="Mute Mic">🎤</button>
       <button onclick="switchCamera()" id="cam-switch-btn" class="call-control-btn hidden" title="Switch Camera">🔄</button>
-      <button onclick="endCall()" class="call-control-btn" style="background: #ea0038; color: white;" title="End Call">📞</button>
+      <button onclick="endCall()" class="call-control-btn" style="background: #e11d48;" title="End Call">📞</button>
       <button onclick="toggleVideo()" id="video-toggle-btn" class="call-control-btn" title="Toggle Camera">📹</button>
     </div>
   </div>
 
-  <!-- INCOMING CALL RINGING MODAL -->
-  <div id="incoming-call-modal" class="modal-overlay hidden" style="background: rgba(0,0,0,0.85); z-index: 3500;">
-    <div class="card" style="background: var(--card-bg); width: 320px; padding: 30px;">
-      <h3 style="color: var(--text-primary); margin-bottom: 10px;">Incoming Call...</h3>
-      <p id="incoming-caller-name" style="font-size: 18px; font-weight: bold; color: #00a884; margin-bottom: 20px;"></p>
+  <!-- Incoming Call Modal -->
+  <div id="incoming-call-modal" class="modal-overlay hidden" style="background: rgba(15,23,42,.9); z-index: 3500;">
+    <div class="card" style="width: 320px; padding: 30px;">
+      <h3 style="color: var(--slate-900); margin-bottom: 10px;">Incoming Call...</h3>
+      <p id="incoming-caller-name" style="font-size: 18px; font-weight: bold; color: var(--brand-600); margin-bottom: 20px;"></p>
       <div style="display: flex; gap: 15px; justify-content: center;">
-        <button onclick="acceptIncomingCall()" class="btn-primary" style="background: #25d366; flex: 1;">Accept</button>
-        <button onclick="rejectIncomingCall()" class="btn-secondary" style="background: #ea0038; flex: 1;">Reject</button>
+        <button onclick="acceptIncomingCall()" class="btn-primary" style="background: #10b981; flex: 1;">Accept</button>
+        <button onclick="rejectIncomingCall()" class="btn-secondary" style="background: #e11d48; color:#fff; border: none; flex: 1;">Reject</button>
       </div>
     </div>
   </div>
 
+  <!-- AUTH SCREEN -->
   <div id="auth-screen" class="centered-container">
     <div class="card">
-      <h2 class="auth-title">WhatsApp Ultra</h2>
-      <input type="text" id="auth-username" placeholder="Username">
+      <div class="auth-logo">BM</div>
+      <h2 class="auth-title">BM Group Chat</h2>
+      <p class="auth-sub">Sign in with your Roll No to start chatting</p>
+
+      <div id="reg-name-wrap" class="hidden">
+        <input type="text" id="auth-name" placeholder="Full Name">
+      </div>
+
+      <input type="text" id="auth-rollno" placeholder="Roll No / Faculty ID">
+
+      <div id="reg-role-wrap" class="hidden" style="display:flex; gap:8px; margin-bottom:12px;">
+        <select id="auth-role" style="margin-bottom:0; flex:1;">
+          <option value="student">Student</option>
+          <option value="faculty">Faculty</option>
+          <option value="admin">Admin</option>
+        </select>
+        <select id="auth-branch" style="margin-bottom:0; flex:1;">
+          <option value="CSE">CSE</option>
+          <option value="AIDS">AIDS</option>
+          <option value="Other">Other</option>
+        </select>
+      </div>
+
       <input type="password" id="auth-password" placeholder="Password">
-      <div class="row" style="display: flex; gap: 10px; width: 100%; margin-top:15px;">
-        <button onclick="authAction('login')" class="btn-primary" style="flex: 1;">Login</button>
-        <button onclick="authAction('register')" class="btn-secondary" style="flex: 1;">Register</button>
+
+      <div class="row">
+        <button onclick="authAction('login')" class="btn-primary" id="login-btn">Login</button>
+        <button onclick="toggleRegisterMode()" class="btn-secondary" id="register-btn">Register</button>
       </div>
     </div>
   </div>
 
+  <!-- APP SCREEN -->
   <div id="app-screen" class="app-container hidden">
     <div class="sidebar" id="sidebar">
       <div class="sidebar-header">
         <div class="profile-info">
           <input type="file" id="avatar-input" style="display:none;" accept="image/*" onchange="uploadProfilePic(this)">
-          <img id="my-avatar" src="https://www.w3schools.com/howto/img_avatar.png" onclick="document.getElementById('avatar-input').click()" title="Click to change profile picture" class="avatar-img">
-          <h3 id="current-user-display">SUMIT</h3>
+          <img id="my-avatar" src="https://www.w3schools.com/howto/img_avatar.png" onclick="document.getElementById('avatar-input').click()" title="Change profile picture" class="avatar-img">
+          <div style="min-width:0;">
+            <h3 id="current-user-display">User</h3>
+            <div class="user-roll" id="current-user-roll">—</div>
+          </div>
         </div>
-        <div style="display: flex; gap: 8px; align-items: center;">
-          <button onclick="changePassword()" class="btn-logout" style="background:#00a884;" title="Change Password">🔑</button>
-          <button onclick="toggleTheme()" class="btn-theme-toggle" title="Toggle Dark/Light Mode">🌙</button>
+        <div style="display: flex; gap: 6px; align-items: center;">
+          <button onclick="changePassword()" class="btn-theme-toggle" title="Change Password">🔑</button>
+          <button onclick="toggleTheme()" class="btn-theme-toggle" title="Toggle Theme">🌙</button>
           <button onclick="logout()" class="btn-logout">Logout</button>
         </div>
       </div>
 
-      <!-- NAVIGATION TABS -->
-      <div class="sidebar-tabs" style="display: flex; background: var(--header-bg); border-bottom: 1px solid var(--border-color);">
-        <button onclick="switchTab('chats')" class="tab-btn active" id="tab-chats-btn" style="flex:1; padding:10px; border:none; background:transparent; font-weight:bold; cursor:pointer; color:var(--text-primary); border-bottom:2px solid #00a884; font-size:13px;">Chats</button>
-        <button onclick="switchTab('status')" class="tab-btn" id="tab-status-btn" style="flex:1; padding:10px; border:none; background:transparent; font-weight:bold; cursor:pointer; color:var(--text-secondary); font-size:13px;">Status</button>
-        <button onclick="switchTab('calls')" class="tab-btn" id="tab-calls-btn" style="flex:1; padding:10px; border:none; background:transparent; font-weight:bold; cursor:pointer; color:var(--text-secondary); font-size:13px;">Calls</button>
+      <div class="sidebar-tabs">
+        <button onclick="switchTab('chats')" class="tab-btn active" id="tab-chats-btn">Chats</button>
+        <button onclick="switchTab('status')" class="tab-btn" id="tab-status-btn">Status</button>
+        <button onclick="switchTab('calls')" class="tab-btn" id="tab-calls-btn">Calls</button>
       </div>
-      
+
       <div class="search-box">
-        <input type="text" id="target-username" placeholder="Add friend username...">
+        <input type="text" id="target-username" placeholder="Enter Roll No to add friend...">
         <button onclick="sendFriendRequest()" class="btn-add">+</button>
       </div>
 
-      <!-- GROUP CHAT CREATION BUTTON -->
-      <div style="padding: 0 15px; margin-top: 10px;">
-        <button onclick="createNewGroup()" style="background:#00a884; color:white; border:none; padding:8px 12px; border-radius:6px; cursor:pointer; font-weight:bold; width:100%; font-size: 13px;">👥 Create New Group</button>
+      <div style="padding: 0 14px; margin-top: 8px;">
+        <button onclick="createNewGroup()" style="background: linear-gradient(135deg, var(--brand-600), var(--brand-700)); color:white; border:none; padding:10px 12px; border-radius:10px; cursor:pointer; font-weight:700; width:100%; font-size: 12.5px; font-family: inherit;">👥 Create New Group</button>
       </div>
 
       <div class="sidebar-scroll">
-        <!-- CHATS TAB VIEW -->
         <div id="friends-list" class="list-container">
           <div class="section-title">PENDING REQUESTS</div>
           <div id="requests-list" class="list-container"></div>
@@ -119,19 +455,17 @@
           <div id="chats-sublist"></div>
         </div>
 
-        <!-- STATUS TAB VIEW -->
         <div id="status-view-container" class="list-container hidden">
           <input type="file" id="status-file-input" style="display:none;" accept="image/*,video/*" onchange="uploadStatusMedia(this)">
-          
           <div class="list-item" onclick="openStatusCreator()">
             <div style="display:flex; align-items:center; gap:10px;">
               <div style="position:relative;">
                 <img id="my-status-avatar" src="https://www.w3schools.com/howto/img_avatar.png" style="width:38px; height:38px; border-radius:50%; object-fit:cover;">
-                <span style="position:absolute; bottom:0; right:0; background:#00a884; color:white; border-radius:50%; width:16px; height:16px; font-size:12px; display:flex; align-items:center; justify-content:center;">T</span>
+                <span style="position:absolute; bottom:0; right:0; background:var(--brand-600); color:white; border-radius:50%; width:18px; height:18px; font-size:12px; display:flex; align-items:center; justify-content:center;">T</span>
               </div>
               <div>
-                <span style="font-weight:600; display:block;">Create Text Status</span>
-                <span style="font-size:12px; color:var(--text-secondary);">Tap to write a text status</span>
+                <span style="font-weight:700; display:block; font-size:13px;">Create Text Status</span>
+                <span style="font-size:11.5px; color:var(--slate-500);">Tap to write a text status</span>
               </div>
             </div>
           </div>
@@ -140,11 +474,11 @@
             <div style="display:flex; align-items:center; gap:10px;">
               <div style="position:relative;">
                 <img src="https://www.w3schools.com/howto/img_avatar.png" style="width:38px; height:38px; border-radius:50%; object-fit:cover;">
-                <span style="position:absolute; bottom:0; right:0; background:#00a884; color:white; border-radius:50%; width:16px; height:16px; font-size:12px; display:flex; align-items:center; justify-content:center;">+</span>
+                <span style="position:absolute; bottom:0; right:0; background:var(--brand-600); color:white; border-radius:50%; width:18px; height:18px; font-size:12px; display:flex; align-items:center; justify-content:center;">+</span>
               </div>
               <div>
-                <span style="font-weight:600; display:block;">Photo/Video Status</span>
-                <span style="font-size:12px; color:var(--text-secondary);">Tap to upload photo or video</span>
+                <span style="font-weight:700; display:block; font-size:13px;">Photo/Video Status</span>
+                <span style="font-size:11.5px; color:var(--slate-500);">Tap to upload media</span>
               </div>
             </div>
           </div>
@@ -153,11 +487,10 @@
           <div id="statuses-list"></div>
         </div>
 
-        <!-- CALLS TAB VIEW -->
         <div id="calls-view-container" class="list-container hidden">
-          <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px 15px; border-bottom: 1px solid var(--border-color);">
+          <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--slate-200);">
             <div class="section-title" style="margin: 0; padding: 0;">RECENT CALLS</div>
-            <button onclick="clearCallLogs()" style="background:#ea0038; color:white; border:none; padding:5px 10px; border-radius:6px; cursor:pointer; font-size:11px; font-weight:bold;">🗑️ Clear Log</button>
+            <button onclick="clearCallLogs()" style="background:#e11d48; color:white; border:none; padding:6px 10px; border-radius:8px; cursor:pointer; font-size:11px; font-weight:700;">🗑️ Clear</button>
           </div>
           <div id="calls-list"></div>
         </div>
@@ -166,36 +499,40 @@
 
     <div class="chat-area mobile-hidden" id="chat-area">
       <div id="chat-placeholder" class="centered-container">
-        <p>Select a friend to start chatting</p>
+        <div style="text-align:center; padding: 20px;">
+          <div style="width:80px; height:80px; margin:0 auto 20px; border-radius:22px; background: linear-gradient(135deg, var(--brand-600), var(--brand-900)); display:flex; align-items:center; justify-content:center; color:#fff; font-size:36px; font-weight:800; box-shadow: 0 12px 32px rgba(37,99,235,.32);">BM</div>
+          <h3 style="color: var(--slate-700); font-size: 18px; margin-bottom: 8px;">Welcome to BM Group Chat</h3>
+          <p style="color: var(--slate-500); font-size: 13px;">Select a friend to start chatting</p>
+        </div>
       </div>
-      
+
       <div id="active-chat" class="chat-window hidden">
         <div class="chat-header">
-          <div style="display: flex; align-items: center; gap: 10px; flex: 1;">
+          <div style="display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0;">
             <button id="back-btn" onclick="toggleSidebar(true)" class="btn-back">⬅</button>
             <img id="active-friend-avatar" src="https://www.w3schools.com/howto/img_avatar.png" class="avatar-img-chat">
             <div class="header-info">
-              <span id="active-friend-name">Friend Name</span>
+              <span id="active-friend-name">Select a chat</span>
               <span id="active-friend-status" class="status-indicator">Offline</span>
             </div>
           </div>
           <div class="chat-header-actions">
             <button onclick="startCall('audio')" class="icon-btn" title="Audio Call">📞</button>
             <button onclick="startCall('video')" class="icon-btn" title="Video Call">📹</button>
-            <input type="text" id="in-chat-search" placeholder="Search in chat..." oninput="searchInChat(this.value)" class="chat-search-input hidden">
+            <input type="text" id="in-chat-search" placeholder="Search..." oninput="searchInChat(this.value)" class="chat-search-input hidden">
             <button onclick="toggleInChatSearch()" class="icon-btn" title="Search Message">🔍</button>
-            <button onclick="clearFullChat()" class="icon-btn" title="Clear Chat" style="color:#ea0038;">🗑️</button>
+            <button onclick="clearFullChat()" class="icon-btn" title="Clear Chat">🗑️</button>
           </div>
         </div>
-        
+
         <div id="messages-display" class="messages-container"></div>
-        
+
         <div id="reply-preview-bar" class="reply-preview-bar hidden">
-          <div style="flex:1;">
-            <span style="font-size:11px; font-weight:bold; color:#00a884;">Replying to:</span>
-            <p id="reply-preview-text" style="font-size:13px; margin-top:2px; color:var(--text-primary); text-overflow:ellipsis; overflow:hidden; white-space:nowrap;"></p>
+          <div style="flex:1; min-width:0;">
+            <span style="font-size:11px; font-weight:800; color:var(--brand-700);">Replying to:</span>
+            <p id="reply-preview-text" style="font-size:13px; margin-top:2px; color:var(--slate-700); text-overflow:ellipsis; overflow:hidden; white-space:nowrap;"></p>
           </div>
-          <button onclick="cancelReply()" style="background:transparent; border:none; font-size:16px; cursor:pointer; color:var(--text-secondary);">✕</button>
+          <button onclick="cancelReply()" style="background:transparent; border:none; font-size:18px; cursor:pointer; color:var(--slate-500); padding: 4px 10px;">✕</button>
         </div>
 
         <div class="chat-input-area">
@@ -210,6 +547,5 @@
   </div>
 
   <script src="main.js"></script>
-  <script src="chat-wallpaper.js"></script>
 </body>
 </html>
